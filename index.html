@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>檔案簽章鑑識台（離線版）</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+
+<!--
+  這份工具刻意拆成 index.html / css/styles.css / js/*.js 幾個檔案，
+  方便之後維護、除錯或加新格式時只改對應的一個檔案。
+  所有檔案都是相對路徑，離線狀態下用瀏覽器直接打開 index.html 就能跑，
+  不需要架伺服器，但整個資料夾（含 css/ 與 js/ 子目錄）要保持在一起，
+  不要只複製 index.html 出去單獨用。
+-->
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="header-top">
+      <div class="tag" data-i18n="app.tag"><span class="dot"></span></div>
+      <div class="lang-theme-group">
+        <button class="theme-toggle" id="langToggle"></button>
+        <button class="theme-toggle" id="themeToggle" data-i18n="theme.light"></button>
+      </div>
+    </div>
+    <h1><span data-i18n="app.title"></span><span class="byte">.</span></h1>
+    <p data-i18n-html="app.subtitle"></p>
+  </header>
+
+  <noscript>
+    <!--
+      JavaScript 關閉時，i18n.js 不會執行，t() 也不存在，
+      所以這裡沒辦法用 data-i18n 動態翻譯——三種語言只能直接並列寫死。
+      這也是唯一一處刻意重複三語言文案的地方。
+    -->
+    <div class="noscript-warning" role="alert">
+      <h2><span aria-hidden="true">⚠</span> 需要啟用 JavaScript / JavaScript required / JavaScript が必要です</h2>
+      <div class="lang-block" lang="zh-Hant">
+        <span class="lang-tag">繁體中文</span>
+        <p>這個工具完全在你的瀏覽器裡執行——讀取檔案位元組、比對簽章、計算 SHA-256 全都需要 JavaScript，沒有它就無法運作。</p>
+        <p>請在瀏覽器設定中為本頁啟用 JavaScript 後重新整理。<b>本工具不會上傳你的任何檔案，也不會蒐集任何資料</b>，所有運算都在這台裝置上完成。</p>
+      </div>
+      <div class="lang-block" lang="en">
+        <span class="lang-tag">English</span>
+        <p>This tool runs entirely inside your browser — reading file bytes, matching signatures and computing SHA-256 all require JavaScript, and it cannot work without it.</p>
+        <p>Please enable JavaScript for this page in your browser settings and reload. <b>This tool never uploads your files and collects no data</b>; everything is computed on this device.</p>
+      </div>
+      <div class="lang-block" lang="ja">
+        <span class="lang-tag">日本語</span>
+        <p>このツールはすべてブラウザ内で動作します。ファイルのバイト読み取り、シグネチャ照合、SHA-256 の計算はいずれも JavaScript を必要とするため、無効のままでは動作しません。</p>
+        <p>ブラウザの設定でこのページの JavaScript を有効にしてから再読み込みしてください。<b>ファイルがアップロードされることはなく、データの収集も一切行いません</b>。すべての処理はこの端末上で完結します。</p>
+      </div>
+    </div>
+  </noscript>
+
+  <div id="dropzone">
+    <span class="icon">89 50 4E 47 0D 0A 1A 0A</span>
+    <strong data-i18n="dropzone.title"></strong>
+    <span class="sub" data-i18n="dropzone.sub"></span>
+    <div class="pickrow">
+      <button type="button" id="pickFiles" data-i18n="dropzone.pickFiles"></button>
+      <button type="button" id="pickDir" data-i18n="dropzone.pickDir"></button>
+    </div>
+  </div>
+  <input type="file" id="fileInput" multiple hidden>
+  <input type="file" id="dirInput" webkitdirectory directory multiple hidden>
+
+  <div class="progress hidden" id="progress"></div>
+
+  <div class="alertbar hidden" id="alertBar" role="alert" aria-live="assertive">
+    <span class="ic" aria-hidden="true">!</span>
+    <div><h3 id="alertTitle"></h3><p id="alertText"></p></div>
+  </div>
+
+  <div class="rename-note">
+    <span class="rename-note-icon" aria-hidden="true">!</span>
+    <div class="rename-note-body">
+      <p class="rename-note-title" data-i18n-html="rename.title"></p>
+      <ul class="rename-note-list">
+        <li data-i18n-html="rename.li1"></li>
+        <li data-i18n-html="rename.li2"></li>
+        <li data-i18n-html="rename.li3"></li>
+        <li data-i18n-html="rename.li4"></li>
+      </ul>
+      <p class="rename-note-hint" data-i18n="rename.hint"></p>
+      <p class="rename-note-exception" data-i18n-html="rename.exception"></p>
+    </div>
+  </div>
+
+  <div class="controls hidden" id="controls">
+    <div class="ctl-left">
+      <input type="text" class="searchbox" id="searchBox" autocomplete="off"
+             data-i18n-placeholder="controls.searchPlaceholder" data-i18n-aria-label="controls.searchAriaLabel">
+      <label class="filter-label"><input type="checkbox" id="filterToggle" checked><span data-i18n="controls.filterLabel"></span></label>
+      <label class="filter-label"><input type="checkbox" id="dupOnly"><span data-i18n="controls.dupOnly"></span></label>
+    </div>
+    <div class="btnrow">
+      <button id="hashAllBtn" data-i18n="btn.hashAll"></button>
+      <button id="copyHashBtn" data-i18n="btn.copyHash"></button>
+      <button id="csvBtn" data-i18n="btn.csv"></button>
+      <button id="downloadBtn" data-i18n="btn.download"></button>
+      <button id="clearBtn" data-i18n="btn.clear"></button>
+    </div>
+  </div>
+
+  <div class="summary hidden" id="summary"></div>
+
+  <div id="tableWrap" class="hidden">
+    <table>
+      <thead><tr id="theadRow"></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <details class="a11ysection">
+    <summary data-i18n="a11y.summary"></summary>
+    <div class="a11y-body">
+      <h3 data-i18n="a11y.h.keyboard"></h3>
+      <p data-i18n="a11y.p.keyboard"></p>
+      <ul>
+        <li data-i18n-html="a11y.li.tab"></li>
+        <li data-i18n-html="a11y.li.enter"></li>
+        <li data-i18n-html="a11y.li.esc"></li>
+        <li data-i18n-html="a11y.li.dialogtab"></li>
+      </ul>
+      <h3 data-i18n="a11y.h.screenreader"></h3>
+      <ul>
+        <li data-i18n-html="a11y.li.rowaria"></li>
+        <li data-i18n-html="a11y.li.alert"></li>
+        <li data-i18n-html="a11y.li.toast"></li>
+        <li data-i18n-html="a11y.li.dialog"></li>
+      </ul>
+      <h3 data-i18n="a11y.h.motion"></h3>
+      <ul>
+        <li data-i18n-html="a11y.li.reducedmotion"></li>
+        <li data-i18n-html="a11y.li.theme"></li>
+        <li data-i18n-html="a11y.li.zoom"></li>
+      </ul>
+      <h3 data-i18n="a11y.h.known"></h3>
+      <p data-i18n="a11y.p.known"></p>
+    </div>
+  </details>
+
+  <div class="limitbox">
+    <h4 data-i18n="limitbox.title"></h4>
+    <ul>
+      <li data-i18n-html="limitbox.li1"></li>
+      <li data-i18n-html="limitbox.li2"></li>
+      <li data-i18n-html="limitbox.li3"></li>
+      <li data-i18n-html="limitbox.li4"></li>
+      <li data-i18n-html="limitbox.li5"></li>
+    </ul>
+  </div>
+
+  <p class="note" data-i18n-html="note.body"></p>
+
+  <details class="refsection">
+    <summary data-i18n="ref.summary"></summary>
+    <p class="ref-intro" data-i18n="ref.intro"></p>
+    <div class="ref-tablewrap"><table class="ref-table">
+      <thead><tr>
+        <th data-i18n="ref.colType"></th><th data-i18n="ref.colFormat"></th>
+        <th data-i18n="ref.colExt"></th><th data-i18n="ref.colHex"></th>
+      </tr></thead>
+      <tbody id="refBody"></tbody>
+    </table></div>
+  </details>
+
+  <footer class="refs">
+    <h2 data-i18n="footer.heading"></h2>
+    <ul>
+      <li><a href="https://www.garykessler.net/library/file_sigs.html" target="_blank" rel="noopener noreferrer">File Signatures Table — Gary Kessler Associates</a><br><span class="refnote" data-i18n="footer.note.kessler"></span></li>
+      <li><a href="https://en.wikipedia.org/wiki/List_of_file_signatures" target="_blank" rel="noopener noreferrer">List of file signatures — Wikipedia</a><br><span class="refnote" data-i18n="footer.note.wiki"></span></li>
+      <li><a href="https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/" target="_blank" rel="noopener noreferrer">[MS-CFB]: Compound File Binary File Format — Microsoft Learn</a><br><span class="refnote" data-i18n="footer.note.cfb"></span></li>
+      <li><a href="https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT" target="_blank" rel="noopener noreferrer">.ZIP File Format Specification（APPNOTE.TXT）— PKWARE</a><br><span class="refnote" data-i18n="footer.note.zip"></span></li>
+      <li><a href="https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf" target="_blank" rel="noopener noreferrer">PDF 32000-1:2008（ISO 32000-1）— Adobe 開源版規格</a><br><span class="refnote" data-i18n="footer.note.pdf"></span></li>
+      <li><a href="https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf" target="_blank" rel="noopener noreferrer">FIPS PUB 180-4: Secure Hash Standard — NIST</a><br><span class="refnote" data-i18n="footer.note.sha256"></span></li>
+      <li><a href="https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest" target="_blank" rel="noopener noreferrer">SubtleCrypto.digest() — MDN Web Docs</a><br><span class="refnote" data-i18n="footer.note.webcrypto"></span></li>
+      <li><a href="https://github.com/corkami/pics" target="_blank" rel="noopener noreferrer">Corkami — File format diagrams（Ange Albertini）</a><br><span class="refnote" data-i18n="footer.note.corkami"></span></li>
+      <li><a href="https://www.virustotal.com/" target="_blank" rel="noopener noreferrer">VirusTotal</a><br><span class="refnote" data-i18n="footer.note.virustotal"></span></li>
+    </ul>
+    <p class="built" data-i18n="footer.built"></p>
+  </footer>
+
+</div>
+
+<!--
+  載入順序很重要：後面的檔案會用到前面檔案定義的函式／資料，
+  所有檔案都掛在全域（window）而不是用模組系統，方便直接用瀏覽器打開、
+  不需要建置流程；副作用是每個檔案的頂層變數名稱要注意別跟其他檔案撞名。
+-->
+<script src="js/utils.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/sha256.js"></script>
+<script src="js/signatures.js"></script>
+<script src="js/detectors.js"></script>
+<script src="js/preview.js"></script>
+<script src="js/reference-table.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

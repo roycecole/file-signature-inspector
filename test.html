@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>檔案簽章鑑識台 — 自我測試</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="stylesheet" href="css/styles.css">
+<style>
+  /* 這份頁面是給開發者用的，不需要跟主頁面完全一樣的視覺語言，
+     借用 styles.css 的色彩變數就好，排版另外寫一小段。 */
+  .testwrap{max-width:820px;margin:0 auto;padding:36px 18px 70px;}
+  .testhead{margin-bottom:22px;}
+  .testhead h1{font-family:var(--mono);font-size:22px;margin:0 0 8px;}
+  .testhead p{color:var(--muted);font-size:13.5px;line-height:1.7;margin:0;max-width:70ch;}
+  .runbar{display:flex;align-items:center;gap:12px;margin:18px 0;flex-wrap:wrap;}
+  .runbar button{
+    font-family:var(--sans);font-weight:700;font-size:14px;padding:10px 18px;border-radius:8px;
+    border:1px solid var(--img);background:var(--img);color:#fff;cursor:pointer;
+  }
+  .runbar button:disabled{opacity:.5;cursor:default;}
+  .runbar .stat{font-family:var(--mono);font-size:13px;color:var(--muted);}
+  .runbar .stat b{color:var(--text);}
+  .runbar .stat.ok b{color:var(--match);}
+  .runbar .stat.bad b{color:var(--mismatch);}
+  .group{margin-top:22px;}
+  .group h2{
+    font-family:var(--mono);font-size:14px;margin:0 0 10px;padding-bottom:6px;
+    border-bottom:1px solid var(--border);color:var(--text);
+  }
+  ul.cases{list-style:none;margin:0;padding:0;}
+  ul.cases li{
+    display:flex;gap:10px;align-items:flex-start;padding:7px 4px;
+    border-bottom:1px solid var(--border-soft);font-size:13px;
+  }
+  ul.cases li:last-child{border-bottom:none;}
+  .badge{
+    flex:none;font-family:var(--mono);font-size:11px;font-weight:700;
+    padding:2px 8px;border-radius:5px;min-width:44px;text-align:center;
+  }
+  .badge.pass{color:var(--match);background:rgba(63,185,106,.14);}
+  .badge.fail{color:#fff;background:var(--mismatch);}
+  .badge.pending{color:var(--muted);background:var(--panel-2);}
+  .casebody{min-width:0;}
+  .casebody .name{font-weight:600;}
+  .casebody .detail{color:var(--muted);font-size:12px;margin-top:2px;word-break:break-all;}
+  .backlink{display:inline-block;margin-top:26px;font-size:13px;color:var(--img);}
+</style>
+</head>
+<body>
+<div class="testwrap">
+
+  <div class="testhead">
+    <h1>檔案簽章鑑識台 — 自我測試</h1>
+    <p>
+      這頁只給開發者用：把 <code>detectors.js</code>／<code>sha256.js</code>／<code>signatures.js</code>
+      的核心判定邏輯，用瀏覽器當場產生的測試檔案（合成的 ZIP／CFB／PDF／PNG 二進位內容）跑一輪，
+      確認邏輯沒有被最近的修改弄壞。不需要伺服器、不需要 Node，開這個檔案按「執行測試」就好。
+      修改 <code>js/detectors.js</code> 之後，重新整理這頁再跑一次是最快的檢查方式。
+    </p>
+  </div>
+
+  <noscript>
+    <div class="noscript-warning" role="alert">
+      <h2><span aria-hidden="true">⚠</span> 需要啟用 JavaScript / JavaScript required</h2>
+      <p>這是一個在瀏覽器裡直接執行判定邏輯的測試頁，必須啟用 JavaScript 才能執行測試。</p>
+      <p>This page runs the detection logic directly in your browser; JavaScript must be enabled to run the tests.</p>
+    </div>
+  </noscript>
+
+  <div class="runbar">
+    <button id="runBtn">▶ 執行測試</button>
+    <span class="stat" id="statTotal">尚未執行</span>
+    <span class="stat ok" id="statPass"></span>
+    <span class="stat bad" id="statFail"></span>
+  </div>
+
+  <div id="results"></div>
+
+  <a class="backlink" href="index.html">← 回到主工具</a>
+</div>
+
+<!-- 只載入「純邏輯」的檔案：不載入 preview.js / reference-table.js / app.js，
+     因為那幾個檔案的頂層程式碼會直接操作正式頁面才有的 DOM 元素
+     （例如 reference-table.js 一載入就會找 #refBody），這個測試頁沒有那些
+     元素，硬載入會直接噴錯。 -->
+<script src="js/utils.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/sha256.js"></script>
+<script src="js/signatures.js"></script>
+<script src="js/detectors.js"></script>
+
+<script>
+(function(){
+'use strict';
+
+/* =============================================================
+   測試專用的檔案產生器（Fixture Builder）
+   ---------------------------------------------------------------
+   瀏覽器裡沒有檔案系統，沒辦法像開發時用 Python 那樣先在硬碟上
+   準備好 test.docx / test.odt 這些測試檔。這裡改成用最小可行的
+   ZIP / CFB 寫入器，當場在記憶體裡組出符合規格的二進位內容，
+   包成 File 物件餵給 resolveSignature() 測試。
+
+   這些函式只在這個測試頁使用，不是正式功能的一部分。
+   ============================================================= */
+
+// ---- CRC32（ZIP 與 PNG 的檔頭都需要）----
+var CRC_TABLE = (function(){
+  var t = new Uint32Array(256);
+  for(var n = 0; n < 256; n++){
+    var c = n;
+    for(var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(bytes){
+  var c = 0xFFFFFFFF;
+  for(var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+function u16le(n){ return [n & 0xFF, (n>>>8) & 0xFF]; }
+function u32le(n){ return [n & 0xFF, (n>>>8) & 0xFF, (n>>>16) & 0xFF, (n>>>24) & 0xFF]; }
+function concatBytes(arrs){
+  var total = 0;
+  arrs.forEach(function(a){ total += a.length; });
+  var out = new Uint8Array(total), off = 0;
+  arrs.forEach(function(a){ out.set(a, off); off += a.length; });
+  return out;
+}
+function strBytes(s){ return new Uint8Array(Array.prototype.map.call(s, function(c){ return c.charCodeAt(0); })); }
+
+// ---- 最小可行的 ZIP 寫入器（全部 STORED，不壓縮）----
+// entries: [{name:'word/document.xml', data:Uint8Array}]
+function makeZip(entries){
+  var localParts = [], centralParts = [], offset = 0;
+  entries.forEach(function(e){
+    var nameBytes = strBytes(e.name);
+    var data = e.data;
+    var crc = crc32(data);
+    var localHeader = concatBytes([
+      new Uint8Array([0x50,0x4B,0x03,0x04]),      // local file header signature
+      new Uint8Array(u16le(20)),                   // version needed
+      new Uint8Array(u16le(0)),                     // flags
+      new Uint8Array(u16le(0)),                     // method = stored
+      new Uint8Array(u16le(0)), new Uint8Array(u16le(0)), // mod time/date
+      new Uint8Array(u32le(crc)),
+      new Uint8Array(u32le(data.length)),           // compressed size
+      new Uint8Array(u32le(data.length)),           // uncompressed size
+      new Uint8Array(u16le(nameBytes.length)),
+      new Uint8Array(u16le(0)),                     // extra field length
+      nameBytes
+    ]);
+    localParts.push(localHeader, data);
+
+    var centralHeader = concatBytes([
+      new Uint8Array([0x50,0x4B,0x01,0x02]),        // central directory signature
+      new Uint8Array(u16le(20)),                     // version made by
+      new Uint8Array(u16le(20)),                     // version needed
+      new Uint8Array(u16le(0)),                       // flags
+      new Uint8Array(u16le(0)),                       // method
+      new Uint8Array(u16le(0)), new Uint8Array(u16le(0)),
+      new Uint8Array(u32le(crc)),
+      new Uint8Array(u32le(data.length)),
+      new Uint8Array(u32le(data.length)),
+      new Uint8Array(u16le(nameBytes.length)),
+      new Uint8Array(u16le(0)),                       // extra length
+      new Uint8Array(u16le(0)),                       // comment length
+      new Uint8Array(u16le(0)),                       // disk number start
+      new Uint8Array(u16le(0)),                       // internal attrs
+      new Uint8Array(u32le(0)),                       // external attrs
+      new Uint8Array(u32le(offset)),                  // local header offset
+      nameBytes
+    ]);
+    centralParts.push(centralHeader);
+    offset += localHeader.length + data.length;
+  });
+
+  var centralDir = concatBytes(centralParts);
+  var localAll = concatBytes(localParts);
+  var eocd = concatBytes([
+    new Uint8Array([0x50,0x4B,0x05,0x06]),
+    new Uint8Array(u16le(0)), new Uint8Array(u16le(0)),
+    new Uint8Array(u16le(entries.length)),
+    new Uint8Array(u16le(entries.length)),
+    new Uint8Array(u32le(centralDir.length)),
+    new Uint8Array(u32le(localAll.length)),           // central dir offset
+    new Uint8Array(u16le(0))                           // comment length
+  ]);
+  return concatBytes([localAll, centralDir, eocd]);
+}
+
+// ---- 最小可行的 CFB／OLE2 寫入器 ----
+// entries: [{name, type}]，type：1=storage 2=stream 5=root（root 會自動補上）
+function dirEntry(name, type, clsid){
+  var nb = [];
+  for(var i = 0; i < name.length; i++){ var cc = name.charCodeAt(i); nb.push(cc & 0xFF, (cc>>>8) & 0xFF); }
+  nb.push(0,0); // null terminator
+  var e = new Uint8Array(128);
+  e.set(nb.slice(0, 64), 0);
+  var dv = new DataView(e.buffer);
+  dv.setUint16(64, nb.length, true);
+  e[66] = type;
+  e[67] = 1;
+  dv.setUint32(68, 0xFFFFFFFF, true);
+  dv.setUint32(72, 0xFFFFFFFF, true);
+  dv.setUint32(76, 0xFFFFFFFF, true);
+  if(clsid) e.set(clsid, 80);
+  dv.setUint32(116, 0xFFFFFFFE, true);
+  return e;
+}
+function makeCfb(entries, rootClsid){
+  var SS = 512;
+  var hdr = new Uint8Array(SS);
+  var dv = new DataView(hdr.buffer);
+  hdr.set([0xD0,0xCF,0x11,0xE0,0xA1,0xB1,0x1A,0xE1], 0);
+  dv.setUint16(24, 0x3E, true);
+  dv.setUint16(26, 3, true);
+  dv.setUint16(28, 0xFFFE, true);
+  dv.setUint16(30, 9, true);   // sector shift → 512 bytes/sector
+  dv.setUint16(32, 6, true);
+  dv.setUint32(44, 1, true);   // FAT sector count
+  dv.setUint32(48, 1, true);   // first directory sector
+  dv.setUint32(56, 4096, true);
+  dv.setUint32(60, 0xFFFFFFFE, true);
+  dv.setUint32(68, 0xFFFFFFFE, true);
+  for(var i = 0; i < 109; i++) dv.setUint32(76 + i*4, i === 0 ? 0 : 0xFFFFFFFF, true);
+
+  var all = [dirEntry('Root Entry', 5, rootClsid)].concat(
+    entries.map(function(e){ return dirEntry(e.name, e.type); })
+  );
+  var per = SS / 128;
+  var nsec = Math.ceil(all.length / per);
+  var dirData = new Uint8Array(nsec * per * 128);
+  all.forEach(function(e, idx){ dirData.set(e, idx * 128); });
+
+  var fat = [0xFFFFFFFD];
+  for(var s = 0; s < nsec; s++) fat.push(s === nsec - 1 ? 0xFFFFFFFE : (2 + s));
+  while(fat.length < SS / 4) fat.push(0xFFFFFFFF);
+  var fatSec = new Uint8Array(SS);
+  var fdv = new DataView(fatSec.buffer);
+  fat.forEach(function(v, idx){ fdv.setUint32(idx*4, v, true); });
+
+  return concatBytes([hdr, fatSec, dirData]);
+}
+
+// ---- 最小可行的 PNG 寫入器 ----
+function pngChunk(type, data){
+  var typeBytes = strBytes(type);
+  var body = concatBytes([typeBytes, data]);
+  return concatBytes([
+    new Uint8Array(u32BE(data.length)),
+    typeBytes, data,
+    new Uint8Array(u32BE(crc32(body)))
+  ]);
+}
+function u32BE(n){ return [(n>>>24)&0xFF,(n>>>16)&0xFF,(n>>>8)&0xFF,n&0xFF]; }
+function makePng(){
+  var sig = new Uint8Array([0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A]);
+  var ihdr = concatBytes([
+    new Uint8Array(u32BE(1)), new Uint8Array(u32BE(1)),
+    new Uint8Array([8,2,0,0,0])
+  ]);
+  return concatBytes([sig, pngChunk('IHDR', ihdr), pngChunk('IEND', new Uint8Array(0))]);
+}
+
+function file(name, bytesOrString){
+  var data = (typeof bytesOrString === 'string') ? strBytes(bytesOrString) : bytesOrString;
+  return new File([data], name);
+}
+
+/* =============================================================
+   準備好整組測試檔案（跟先前用 Python/Node 做回歸測試時的檔案一一對應）
+   ============================================================= */
+function buildFixtures(){
+  var MSI_CLSID = new Uint8Array([0x84,0x10,0x0C,0x00,0,0,0,0,0xC0,0,0,0,0,0,0,0x46]);
+
+  var fx = {};
+
+  fx['test.docx'] = file('test.docx', makeZip([
+    {name:'[Content_Types].xml', data:strBytes('<x/>')},
+    {name:'word/document.xml', data:strBytes('<w/>')},
+    {name:'_rels/.rels', data:strBytes('<r/>')}
+  ]));
+
+  fx['test.odt'] = file('test.odt', makeZip([
+    {name:'mimetype', data:strBytes('application/vnd.oasis.opendocument.text')},
+    {name:'content.xml', data:strBytes('<c/>')}
+  ]));
+
+  fx['test.jar'] = file('test.jar', makeZip([
+    {name:'META-INF/MANIFEST.MF', data:strBytes('Manifest-Version: 1.0')},
+    {name:'Main.class', data:new Uint8Array([0])}
+  ]));
+
+  fx['t_macro.docx'] = file('t_macro.docx', makeZip([
+    {name:'[Content_Types].xml', data:strBytes('<x/>')},
+    {name:'word/document.xml', data:strBytes('<w/>')},
+    {name:'word/vbaProject.bin', data:strBytes('fakevba')}
+  ]));
+  fx['t_plain.docx'] = file('t_plain.docx', makeZip([
+    {name:'[Content_Types].xml', data:strBytes('<x/>')},
+    {name:'word/document.xml', data:strBytes('<w/>')}
+  ]));
+  fx['t_ok.docm'] = file('t_ok.docm', makeZip([
+    {name:'[Content_Types].xml', data:strBytes('<x/>')},
+    {name:'word/document.xml', data:strBytes('<w/>')},
+    {name:'word/vbaProject.bin', data:strBytes('fake')}
+  ]));
+  fx['t_macro.xlsx'] = file('t_macro.xlsx', makeZip([
+    {name:'xl/workbook.xml', data:strBytes('<w/>')},
+    {name:'xl/vbaProject.bin', data:strBytes('fake')}
+  ]));
+
+  fx['t_word.doc']  = file('t_word.doc',  makeCfb([{name:'WordDocument',type:2},{name:'1Table',type:2}], null));
+  fx['t_excel.xls'] = file('t_excel.xls', makeCfb([{name:'Workbook',type:2}], null));
+  fx['t_ppt.ppt']   = file('t_ppt.ppt',   makeCfb([{name:'PowerPoint Document',type:2}], null));
+  fx['t_msg.msg']   = file('t_msg.msg',   makeCfb([{name:'__properties_version1.0',type:2}], null));
+  fx['t_installer.msi'] = file('t_installer.msi', makeCfb([
+    {name:'\u3F7F\u4164\u422F', type:2}, {name:'\u4840\u3F3F\u4438', type:2}
+  ], null));
+  fx['t_msi_clsid.doc'] = file('t_msi_clsid.doc', makeCfb([{name:'SomeStream',type:2}], MSI_CLSID));
+  fx['t_macro.doc'] = file('t_macro.doc', makeCfb([
+    {name:'WordDocument',type:2}, {name:'Macros',type:1}, {name:'_VBA_PROJECT',type:2}
+  ], null));
+
+  var png = makePng();
+  fx['t_clean.png'] = file('t_clean.png', png);
+  var zipPayload = makeZip([{name:'secret.txt', data:strBytes('payload'.repeat(20))}]);
+  fx['t_poly.png'] = file('t_poly.png', concatBytes([png, zipPayload]));
+
+  var jpg = concatBytes([new Uint8Array([0xFF,0xD8,0xFF,0xE0]), new Uint8Array(300), new Uint8Array([0xFF,0xD9])]);
+  fx['t_clean.jpg'] = file('t_clean.jpg', jpg);
+  fx['t_append.jpg'] = file('t_append.jpg', concatBytes([jpg, strBytes('HIDDEN_PAYLOAD'.repeat(400))]));
+
+  fx['t_bad.pdf'] = file('t_bad.pdf',
+    '%PDF-1.7\n1 0 obj<</Type/Catalog/OpenAction 2 0 R>>endobj\n' +
+    '2 0 obj<</S/JavaScript/JS(app.alert(1))>>endobj\n' +
+    '3 0 obj<</S/Launch/F(cmd.exe)>>endobj\ntrailer<<>>\n%%EOF\n');
+  fx['t_ok.pdf'] = file('t_ok.pdf', '%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<<>>\n%%EOF\n');
+
+  // ---- 執行檔簽章（原本完全沒有測試覆蓋：PE/ELF/shebang/LNK/Mach-O）----
+  var peBytes = concatBytes([new Uint8Array([0x4D,0x5A,0x90,0x00,0x03,0x00,0x00,0x00]), new Uint8Array(40)]);
+  fx['t_pe_asexe.exe'] = file('t_pe_asexe.exe', peBytes);              // 副檔名正確 → 應為一般執行檔（非高風險）
+  fx['t_pe_aspdf.pdf'] = file('t_pe_aspdf.pdf', peBytes);              // 偽裝成 PDF → 高風險
+
+  var elfBytes = concatBytes([new Uint8Array([0x7F,0x45,0x4C,0x46,0x02,0x01,0x01,0x00]), new Uint8Array(40)]);
+  fx['t_elf.bin'] = file('t_elf.bin', elfBytes);
+
+  var shebangBytes = strBytes('#!/bin/bash\necho hello\n');
+  fx['t_script.sh'] = file('t_script.sh', shebangBytes);
+  fx['t_script_disguised.txt'] = file('t_script_disguised.txt', shebangBytes); // shebang 卻叫 .txt → 高風險
+
+  // LNK 的簽章比較長（21 bytes），直接用 SIGS 裡定義的那組 hex 組出來
+  var lnkHex = '4C0000000114020000000000C000000000000046';
+  var lnkBytes = new Uint8Array(lnkHex.match(/../g).map(function(h){ return parseInt(h,16); }));
+  fx['t_shortcut.lnk'] = file('t_shortcut.lnk', concatBytes([lnkBytes, new Uint8Array(10)]));
+  fx['t_shortcut_aspdf.pdf'] = file('t_shortcut_aspdf.pdf', concatBytes([lnkBytes, new Uint8Array(10)]));
+
+  var machoBytes = concatBytes([new Uint8Array([0xCF,0xFA,0xED,0xFE,0x07,0x00,0x00,0x01]), new Uint8Array(40)]);
+  fx['t_macho.dylib'] = file('t_macho.dylib', machoBytes);
+
+  // ---- 純文字啟發式：sniffTextKind() 的各種分支（原本完全沒有覆蓋）----
+  fx['t_svg.svg'] = file('t_svg.svg', '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><circle r="5"/></svg>');
+  fx['t_svg_script.svg'] = file('t_svg_script.svg', '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+  fx['t_page.html'] = file('t_page.html', '<!DOCTYPE html><html><head></head><body>hi</body></html>');
+  fx['t_page_script_disguised.docx'] = file('t_page_script_disguised.docx', '<!DOCTYPE html><html><body><script>location="http://evil.example/"</script></body></html>');
+  fx['t_data.json'] = file('t_data.json', '{"a":1,"b":[2,3]}');
+  fx['t_export.reg'] = file('t_export.reg', 'Windows Registry Editor Version 5.00\r\n\r\n[HKEY_CURRENT_USER]\r\n');
+  fx['t_key.pem'] = file('t_key.pem', '-----BEGIN CERTIFICATE-----\nMIIBUTCB+wIJAKk=\n-----END CERTIFICATE-----\n');
+
+  // ---- Big5／GBK 舊式雙位元組編碼（沒有 UTF-8 合法性，但也不是二進位垃圾）----
+  fx['t_big5.txt'] = file('t_big5.txt', new Uint8Array([0xA4,0xA4,0xA4,0xE5,0xB4,0xFA,0xB8,0xD5,0x0D,0x0A,0xA6,0xB3,0xAE,0xC4]));
+
+  // ---- WebP／HEIC／AVIF（原本完全沒有測試覆蓋）----
+  var webpBytes = concatBytes([strBytes('RIFF'), new Uint8Array([0,0,0,0]), strBytes('WEBP'), new Uint8Array(20)]);
+  fx['t_image.webp'] = file('t_image.webp', webpBytes);
+
+  var heicBytes = concatBytes([new Uint8Array([0,0,0,0x18]), strBytes('ftyp'), strBytes('heic'), new Uint8Array(20)]);
+  fx['t_photo.heic'] = file('t_photo.heic', heicBytes);
+
+  var avifBytes = concatBytes([new Uint8Array([0,0,0,0x18]), strBytes('ftyp'), strBytes('avif'), new Uint8Array(20)]);
+  fx['t_photo.avif'] = file('t_photo.avif', avifBytes);
+
+  // ---- BMP／RIFF 標頭自述大小與實際不符（checkTrailing 的分支，原本沒有覆蓋）----
+  // BMP 標頭：'BM' + 4-byte LE 宣告的檔案總大小 + 4 bytes reserved + 4 bytes 資料偏移
+  var bmpHdr = new Uint8Array(14);
+  bmpHdr.set(strBytes('BM'), 0);
+  new DataView(bmpHdr.buffer).setUint32(2, 5000000, true); // 宣告 500 萬 bytes，實際只有幾十 bytes
+  fx['t_bmp_sizemismatch.bmp'] = file('t_bmp_sizemismatch.bmp', concatBytes([bmpHdr, new Uint8Array(20)]));
+
+  // RIFF/WAV 標頭：'RIFF' + 4-byte LE 宣告的區塊大小 + 'WAVE'
+  // 注意方向：detectors.js 的 RIFF 檢查只抓「實際檔案比宣告值大超過 1024 bytes」
+  // 這一種情況（等同其他格式的「結尾多出資料」），不是 BMP 那種雙向 abs() 比較，
+  // 所以這裡故意宣告一個很小的長度，但實際檔案填充到遠超過它。
+  var wavHdr = new Uint8Array(12);
+  wavHdr.set(strBytes('RIFF'), 0);
+  new DataView(wavHdr.buffer).setUint32(4, 4, true); // 宣告只有 4 bytes 的內容
+  wavHdr.set(strBytes('WAVE'), 8);
+  fx['t_wav_sizemismatch.wav'] = file('t_wav_sizemismatch.wav', concatBytes([wavHdr, new Uint8Array(3000)]));
+
+  return fx;
+}
+
+/* =============================================================
+   測試案例
+   ---------------------------------------------------------------
+   跟開發時用 Node.js 對 detectors.js 做的回歸測試是同一組案例，
+   確保「拆成瀏覽器可跑的版本」跟「開發時的版本」判定結果一致。
+   ============================================================= */
+async function analyze(f){
+  var bytes = await readBytes(f, 0, 4096);
+  var hex = hexOf(bytes.subarray(0, Math.min(bytes.length, 64)));
+  var det = await resolveSignature(f, bytes, hex);
+  var tr = det ? await checkTrailing(f, det, bytes) : {risks:[]};
+  var pdf = (det && det.name === 'PDF') ? await pdfRisks(f) : [];
+  var claimed = f.name.slice(f.name.lastIndexOf('.'));
+  var fname = filenameRisks(f.name);
+  var crisk = det ? contentRisks({type:det.type, claimed:claimed, format:det.name}, det) : [];
+  return {det:det, tr:tr, pdf:pdf, fname:fname, crisk:crisk, claimed:claimed};
+}
+
+function buildTestGroups(fx){
+  return [
+    {
+      title: '既有格式判定（CFB／ZIP／MSI）',
+      cases: [
+        {name:'test.docx → Word (OOXML)', run: async()=>{
+          var a = await analyze(fx['test.docx']);
+          return {pass: !!a.det && a.det.name.indexOf('Word') === 0, detail: a.det && a.det.name};
+        }},
+        {name:'test.odt → OpenDocument 文字', run: async()=>{
+          var a = await analyze(fx['test.odt']);
+          return {pass: !!a.det && /ODT/.test(a.det.name), detail: a.det && a.det.name};
+        }},
+        {name:'test.jar → Java JAR', run: async()=>{
+          var a = await analyze(fx['test.jar']);
+          return {pass: !!a.det && /JAR/.test(a.det.name), detail: a.det && a.det.name};
+        }},
+        {name:'t_word.doc → Word 97-2003（CFB 目錄解析）', run: async()=>{
+          var a = await analyze(fx['t_word.doc']);
+          return {pass: !!a.det && /Word 97/.test(a.det.name), detail: a.det && a.det.name};
+        }},
+        {name:'t_excel.xls → Excel 97-2003', run: async()=>{
+          var a = await analyze(fx['t_excel.xls']);
+          return {pass: !!a.det && /Excel 97/.test(a.det.name), detail: a.det && a.det.name};
+        }},
+        {name:'t_ppt.ppt → PowerPoint 97-2003', run: async()=>{
+          var a = await analyze(fx['t_ppt.ppt']);
+          return {pass: !!a.det && /PowerPoint 97/.test(a.det.name), detail: a.det && a.det.name};
+        }},
+        {name:'t_msg.msg → Outlook MSG', run: async()=>{
+          var a = await analyze(fx['t_msg.msg']);
+          return {pass: !!a.det && /MSG/.test(a.det.name), detail: a.det && a.det.name};
+        }},
+        {name:'t_installer.msi → MSI（專屬編碼字元偵測）', run: async()=>{
+          var a = await analyze(fx['t_installer.msi']);
+          return {pass: !!a.det && a.det.type==='exec' && /MSI/.test(a.det.name), detail: a.det && a.det.name};
+        }},
+        {name:'t_msi_clsid.doc → MSI（即使副檔名是 .doc，靠 CLSID 判斷）', run: async()=>{
+          var a = await analyze(fx['t_msi_clsid.doc']);
+          return {pass: !!a.det && a.det.type==='exec' && /MSI/.test(a.det.name), detail: a.det && a.det.name};
+        }},
+      ]
+    },
+    {
+      title: 'OOXML 巨集感知',
+      cases: [
+        {name:'t_macro.docx → 含巨集，建議排除 .docx', run: async()=>{
+          var a = await analyze(fx['t_macro.docx']);
+          return {pass: !!a.det && a.det.macro===true && a.det.ext.indexOf('.docx')<0,
+                  detail: a.det && ('macro='+a.det.macro+' ext=['+a.det.ext.join(',')+']')};
+        }},
+        {name:'t_plain.docx → 無巨集，.docx 相符', run: async()=>{
+          var a = await analyze(fx['t_plain.docx']);
+          return {pass: !!a.det && !a.det.macro && a.det.ext.indexOf('.docx')>=0,
+                  detail: a.det && ('macro='+a.det.macro)};
+        }},
+        {name:'t_ok.docm → 含巨集且副檔名正確', run: async()=>{
+          var a = await analyze(fx['t_ok.docm']);
+          return {pass: !!a.det && a.det.macro===true && a.det.ext.indexOf('.docm')>=0,
+                  detail: a.det && ('ext=['+a.det.ext.join(',')+']')};
+        }},
+        {name:'t_macro.xlsx → 含巨集，建議 .xlsm', run: async()=>{
+          var a = await analyze(fx['t_macro.xlsx']);
+          return {pass: !!a.det && a.det.macro===true && a.det.ext.indexOf('.xlsx')<0,
+                  detail: a.det && ('ext=['+a.det.ext.join(',')+']')};
+        }},
+        {name:'t_macro.doc → 舊版 Word 巨集偵測（_VBA_PROJECT）', run: async()=>{
+          var a = await analyze(fx['t_macro.doc']);
+          return {pass: !!a.det && a.det.macro===true, detail: a.det && ('macro='+a.det.macro)};
+        }},
+      ]
+    },
+    {
+      title: '附加資料／polyglot 偵測',
+      cases: [
+        {name:'t_clean.png → 不誤報', run: async()=>{
+          var a = await analyze(fx['t_clean.png']);
+          return {pass: a.tr.risks.length===0, detail: JSON.stringify(a.tr.risks.map(function(r){return r.title;}))};
+        }},
+        {name:'t_poly.png → PNG+ZIP polyglot 應標為高風險', run: async()=>{
+          var a = await analyze(fx['t_poly.png']);
+          var hit = a.tr.risks.find(function(r){ return r.level==='high'; });
+          return {pass: !!hit, detail: hit ? hit.title : '(未偵測到)'};
+        }},
+        {name:'t_clean.jpg → 不誤報', run: async()=>{
+          var a = await analyze(fx['t_clean.jpg']);
+          return {pass: a.tr.risks.length===0, detail: JSON.stringify(a.tr.risks.map(function(r){return r.title;}))};
+        }},
+        {name:'t_append.jpg → FFD9 之後有附加資料應標示', run: async()=>{
+          var a = await analyze(fx['t_append.jpg']);
+          var hit = a.tr.risks.find(function(r){ return /結束標記之後/.test(r.title); });
+          return {pass: !!hit, detail: hit ? hit.title : '(未偵測到)'};
+        }},
+      ]
+    },
+    {
+      title: 'PDF 主動風險掃描',
+      cases: [
+        {name:'t_bad.pdf → 偵測到 /Launch 與 /JavaScript', run: async()=>{
+          var a = await analyze(fx['t_bad.pdf']);
+          var hit = a.pdf.find(function(r){ return r.level==='high'; });
+          return {pass: !!hit && /Launch/.test(hit.text) && /JavaScript/.test(hit.text), detail: hit && hit.title};
+        }},
+        {name:'t_ok.pdf → 不誤報', run: async()=>{
+          var a = await analyze(fx['t_ok.pdf']);
+          return {pass: a.pdf.length===0, detail: JSON.stringify(a.pdf.map(function(r){return r.title;}))};
+        }},
+      ]
+    },
+    {
+      title: '簽章表與預覽對照（signatures.js）',
+      cases: [
+        {name:'MEDIA_PREVIEW.PNG → image/png', run: async()=>{
+          var m = MEDIA_PREVIEW['PNG'];
+          return {pass: !!m && m.kind==='image' && m.mime==='image/png', detail: JSON.stringify(m)};
+        }},
+        {name:"MEDIA_PREVIEW['MP4 / ISO BMFF 影片'] → video/mp4", run: async()=>{
+          var m = MEDIA_PREVIEW['MP4 / ISO BMFF 影片'];
+          return {pass: !!m && m.kind==='video' && m.mime==='video/mp4', detail: JSON.stringify(m)};
+        }},
+        {name:"MEDIA_PREVIEW['PDF'] → application/pdf", run: async()=>{
+          var m = MEDIA_PREVIEW['PDF'];
+          return {pass: !!m && m.kind==='pdf' && m.mime==='application/pdf', detail: JSON.stringify(m)};
+        }},
+        {name:'PREVIEW_SIZE_LIMIT 四種類型都有設定門檻', run: async()=>{
+          var ok = ['image','video','audio','pdf'].every(function(k){ return typeof PREVIEW_SIZE_LIMIT[k]==='number' && PREVIEW_SIZE_LIMIT[k]>0; });
+          return {pass: ok, detail: JSON.stringify(PREVIEW_SIZE_LIMIT)};
+        }},
+        {name:'EXT_SIG_MAP 對 .docx 給出 ZIP 容器預期簽章', run: async()=>{
+          var e = EXT_SIG_MAP['.docx'];
+          return {pass: !!e && e.magic==='504B0304' && e.isZip===true, detail: JSON.stringify(e)};
+        }},
+      ]
+    },
+    {
+      title: 'SHA-256（純 JavaScript 實作，對照 NIST 公開測試向量）',
+      cases: [
+        {name:'SHA-256("") 應為 e3b0c442…', run: async()=>{
+          var h = new Sha256(); h.update(new Uint8Array(0));
+          var got = h.hex();
+          return {pass: got === 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', detail: got};
+        }},
+        {name:'SHA-256("abc") 應為 ba7816bf…', run: async()=>{
+          var h = new Sha256(); h.update(strBytes('abc'));
+          var got = h.hex();
+          return {pass: got === 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', detail: got};
+        }},
+        {name:'SHA-256 跨區塊分段 update() 結果一致（55/56/64/65 bytes 邊界）', run: async()=>{
+          var msg = new Uint8Array(65);
+          for(var i=0;i<65;i++) msg[i] = 97; // 'a' * 65
+          var whole = new Sha256(); whole.update(msg);
+          var chunked = new Sha256();
+          chunked.update(msg.subarray(0,10));
+          chunked.update(msg.subarray(10,55));
+          chunked.update(msg.subarray(55,65));
+          var a = whole.hex(), b = chunked.hex();
+          return {pass: a === b, detail: a + (a===b?' == ':' != ') + b};
+        }},
+        {name:'sha256File() 對 File 物件能算出雜湊（實際環境用的入口函式）', run: async()=>{
+          var f = file('hello.txt', 'hello world');
+          var got = await sha256File(f);
+          // 這是 "hello world" 的公開已知 SHA-256 值
+          return {pass: got === 'b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9', detail: got};
+        }},
+      ]
+    },
+    {
+      title: '執行檔簽章（PE／ELF／shebang／LNK／Mach-O）',
+      cases: [
+        {name:'t_pe_asexe.exe → Windows 執行檔，副檔名正確不算高風險', run: async()=>{
+          var a = await analyze(fx['t_pe_asexe.exe']);
+          var risks = a.crisk.concat(a.fname);
+          var high = risks.some(function(w){ return w.level==='high'; });
+          return {pass: !!a.det && a.det.type==='exec' && !high, detail: a.det && a.det.name};
+        }},
+        {name:'t_pe_aspdf.pdf → PE 偽裝成 PDF 應標為高風險', run: async()=>{
+          var a = await analyze(fx['t_pe_aspdf.pdf']);
+          var high = a.crisk.some(function(w){ return w.level==='high'; });
+          return {pass: !!a.det && a.det.type==='exec' && high, detail: a.det && a.det.name};
+        }},
+        {name:'t_elf.bin → ELF 執行檔', run: async()=>{
+          var a = await analyze(fx['t_elf.bin']);
+          return {pass: !!a.det && a.det.type==='exec' && /ELF/.test(a.det.name), detail: a.det && a.det.name};
+        }},
+        {name:'t_script.sh → shebang 腳本，副檔名正確', run: async()=>{
+          var a = await analyze(fx['t_script.sh']);
+          return {pass: !!a.det && a.det.type==='exec' && /shebang/i.test(a.det.name), detail: a.det && a.det.name};
+        }},
+        {name:'t_script_disguised.txt → shebang 卻叫 .txt 應標高風險', run: async()=>{
+          var a = await analyze(fx['t_script_disguised.txt']);
+          var high = a.crisk.some(function(w){ return w.level==='high'; });
+          return {pass: !!a.det && a.det.type==='exec' && high, detail: a.det && a.det.name};
+        }},
+        {name:'t_shortcut.lnk → Windows 捷徑，副檔名正確', run: async()=>{
+          var a = await analyze(fx['t_shortcut.lnk']);
+          return {pass: !!a.det && a.det.type==='exec' && /LNK|捷徑/.test(a.det.name), detail: a.det && a.det.name};
+        }},
+        {name:'t_shortcut_aspdf.pdf → LNK 偽裝成 PDF 應標高風險', run: async()=>{
+          var a = await analyze(fx['t_shortcut_aspdf.pdf']);
+          var high = a.crisk.some(function(w){ return w.level==='high'; });
+          return {pass: !!a.det && a.det.type==='exec' && high, detail: a.det && a.det.name};
+        }},
+        {name:'t_macho.dylib → Mach-O 執行檔', run: async()=>{
+          var a = await analyze(fx['t_macho.dylib']);
+          return {pass: !!a.det && a.det.type==='exec' && /Mach-O/.test(a.det.name), detail: a.det && a.det.name};
+        }},
+      ]
+    },
+    {
+      title: '檔名風險偵測（filenameRisks：雙重副檔名／RLO／異常空白）',
+      cases: [
+        {name:'雙重副檔名 invoice.pdf.exe → 高風險', run: async()=>{
+          var risks = filenameRisks('invoice.pdf.exe');
+          var hit = risks.find(function(w){ return w.level==='high' && /\.pdf\.exe/.test(w.title); });
+          return {pass: !!hit, detail: hit ? hit.title : JSON.stringify(risks)};
+        }},
+        {name:'正常檔名 report.pdf → 不誤報雙重副檔名', run: async()=>{
+          var risks = filenameRisks('report.pdf');
+          return {pass: risks.length===0, detail: JSON.stringify(risks.map(function(w){return w.title;}))};
+        }},
+        {name:'RLO 文字方向控制字元 → 高風險', run: async()=>{
+          var risks = filenameRisks('invoice\u202Etxt.exe');
+          var hit = risks.find(function(w){ return w.level==='high' && /方向控制字元/.test(w.title); });
+          return {pass: !!hit, detail: hit ? hit.title : JSON.stringify(risks)};
+        }},
+        {name:'異常大量空白 → 高風險', run: async()=>{
+          var risks = filenameRisks('invoice' + ' '.repeat(20) + '.exe');
+          var hit = risks.find(function(w){ return /異常大量空白/.test(w.title); });
+          return {pass: !!hit, detail: hit ? hit.title : JSON.stringify(risks)};
+        }},
+      ]
+    },
+    {
+      title: '純文字啟發式判讀（sniffTextKind：SVG／HTML／JSON／PEM／登錄檔）',
+      cases: [
+        {name:'t_svg.svg → SVG 向量圖（無腳本，不應誤報風險）', run: async()=>{
+          var a = await analyze(fx['t_svg.svg']);
+          var high = a.crisk.some(function(w){ return w.level==='high'; });
+          return {pass: !!a.det && /SVG/.test(a.det.name) && !high, detail: a.det && a.det.name};
+        }},
+        {name:'t_svg_script.svg → 含 <script> 的 SVG 應標高風險', run: async()=>{
+          var a = await analyze(fx['t_svg_script.svg']);
+          var hit = a.crisk.find(function(w){ return w.level==='high' && /SVG/.test(w.title); });
+          return {pass: !!hit, detail: hit ? hit.title : JSON.stringify(a.crisk)};
+        }},
+        {name:'t_page.html → HTML 文件', run: async()=>{
+          var a = await analyze(fx['t_page.html']);
+          return {pass: !!a.det && /HTML/.test(a.det.name), detail: a.det && a.det.name};
+        }},
+        {name:'t_page_script_disguised.docx → 含腳本的 HTML 偽裝成 .docx 應標高風險', run: async()=>{
+          var a = await analyze(fx['t_page_script_disguised.docx']);
+          var hit = a.crisk.find(function(w){ return w.level==='high' && /HTML/.test(w.title); });
+          return {pass: !!hit, detail: hit ? hit.title : JSON.stringify(a.crisk)};
+        }},
+        {name:'t_data.json → JSON 資料（推測）', run: async()=>{
+          var a = await analyze(fx['t_data.json']);
+          return {pass: !!a.det && /JSON/.test(a.det.name), detail: a.det && a.det.name};
+        }},
+        {name:'t_export.reg → Windows 登錄檔匯出', run: async()=>{
+          var a = await analyze(fx['t_export.reg']);
+          return {pass: !!a.det && /登錄檔/.test(a.det.name), detail: a.det && a.det.name};
+        }},
+        {name:'t_key.pem → PEM 憑證／金鑰', run: async()=>{
+          var a = await analyze(fx['t_key.pem']);
+          return {pass: !!a.det && /PEM/.test(a.det.name), detail: a.det && a.det.name};
+        }},
+      ]
+    },
+    {
+      title: 'Big5／GBK 舊式編碼純文字',
+      cases: [
+        {name:'t_big5.txt → 判讀為非 UTF-8 純文字（而非未知簽章）', run: async()=>{
+          var a = await analyze(fx['t_big5.txt']);
+          return {pass: !!a.det && a.det.type==='text' && /Big5|GBK|非 UTF-8/.test(a.det.name), detail: a.det && a.det.name};
+        }},
+      ]
+    },
+    {
+      title: 'WebP／HEIC／AVIF',
+      cases: [
+        {name:'t_image.webp → WebP', run: async()=>{
+          var a = await analyze(fx['t_image.webp']);
+          return {pass: !!a.det && a.det.name === 'WebP', detail: a.det && a.det.name};
+        }},
+        {name:'t_photo.heic → HEIC/HEIF', run: async()=>{
+          var a = await analyze(fx['t_photo.heic']);
+          return {pass: !!a.det && /HEIC/.test(a.det.name), detail: a.det && a.det.name};
+        }},
+        {name:'t_photo.avif → AVIF', run: async()=>{
+          var a = await analyze(fx['t_photo.avif']);
+          return {pass: !!a.det && a.det.name === 'AVIF', detail: a.det && a.det.name};
+        }},
+      ]
+    },
+    {
+      title: 'BMP／RIFF 標頭自述大小與實際不符',
+      cases: [
+        {name:'t_bmp_sizemismatch.bmp → 應標示大小不符', run: async()=>{
+          var a = await analyze(fx['t_bmp_sizemismatch.bmp']);
+          var hit = a.tr.risks.find(function(w){ return /BMP.*大小/.test(w.title); });
+          return {pass: !!hit, detail: hit ? hit.title : JSON.stringify(a.tr.risks)};
+        }},
+        {name:'t_wav_sizemismatch.wav → 應標示 RIFF 大小不符', run: async()=>{
+          var a = await analyze(fx['t_wav_sizemismatch.wav']);
+          var hit = a.tr.risks.find(function(w){ return /RIFF.*大小/.test(w.title); });
+          return {pass: !!hit, detail: hit ? hit.title : JSON.stringify(a.tr.risks)};
+        }},
+      ]
+    }
+  ];
+}
+
+/* =============================================================
+   測試執行與畫面渲染
+   ============================================================= */
+var runBtn = document.getElementById('runBtn');
+var resultsEl = document.getElementById('results');
+var statTotal = document.getElementById('statTotal');
+var statPass = document.getElementById('statPass');
+var statFail = document.getElementById('statFail');
+
+function renderPending(groups){
+  resultsEl.innerHTML = groups.map(function(g){
+    return '<div class="group"><h2>'+g.title+'</h2><ul class="cases">' +
+      g.cases.map(function(c){
+        return '<li><span class="badge pending">…</span><div class="casebody"><div class="name">'+esc(c.name)+'</div></div></li>';
+      }).join('') +
+      '</ul></div>';
+  }).join('');
+}
+
+function updateCase(groupIdx, caseIdx, result){
+  var groupEl = resultsEl.children[groupIdx];
+  var li = groupEl.querySelectorAll('ul.cases li')[caseIdx];
+  var badge = li.querySelector('.badge');
+  badge.className = 'badge ' + (result.pass ? 'pass' : 'fail');
+  badge.textContent = result.pass ? 'PASS' : 'FAIL';
+  if(result.detail){
+    var d = document.createElement('div');
+    d.className = 'detail';
+    d.textContent = String(result.detail);
+    li.querySelector('.casebody').appendChild(d);
+  }
+}
+
+async function runAll(){
+  runBtn.disabled = true;
+  runBtn.textContent = '執行中…';
+  statTotal.textContent = ''; statPass.textContent=''; statFail.textContent='';
+
+  var fx = buildFixtures();
+  var groups = buildTestGroups(fx);
+  renderPending(groups);
+
+  var total = 0, pass = 0;
+  for(var gi = 0; gi < groups.length; gi++){
+    for(var ci = 0; ci < groups[gi].cases.length; ci++){
+      total++;
+      var result;
+      try{ result = await groups[gi].cases[ci].run(); }
+      catch(e){ result = {pass:false, detail:'拋出例外：' + (e && e.message ? e.message : e)}; }
+      if(result.pass) pass++;
+      updateCase(gi, ci, result);
+    }
+  }
+
+  statTotal.textContent = '共 ' + total + ' 項';
+  statPass.textContent = '通過 ' + pass;
+  statFail.textContent = (total - pass) ? ('失敗 ' + (total - pass)) : '';
+  runBtn.disabled = false;
+  runBtn.textContent = '▶ 重新執行測試';
+  document.title = (pass === total ? '✅' : '❌') + ' (' + pass + '/' + total + ') 檔案簽章鑑識台 — 自我測試';
+}
+
+runBtn.addEventListener('click', runAll);
+// 一開頁就自動跑一次，省得還要多點一下。
+runAll();
+
+})();
+</script>
+</body>
+</html>
