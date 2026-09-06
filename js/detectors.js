@@ -314,7 +314,9 @@ async function resolveSignature(file, bytes, hex){
     return {type:"doc", name:"CFB 複合文件（目錄無法解析）", ext:[".doc",".xls",".ppt",".msi",".msg"]};
   }
 
-  for(var i=0;i<SIGS.length;i++){ if(hex.indexOf(SIGS[i].magic) === 0) return SIGS[i]; }
+  // 混入使用者自己加的自訂簽章，一起依 magic 長度由長到短比對。
+  var allSigs = allSigsSorted();
+  for(var i=0;i<allSigs.length;i++){ if(hex.indexOf(allSigs[i].magic) === 0) return allSigs[i]; }
 
   // MP3 frame sync（無 ID3 標籤）。必須放在簽章表之後，
   // 否則 UTF-16 LE 的 BOM（FF FE）會被誤判成 MP3。
@@ -520,4 +522,85 @@ function contentRisks(r, det){
     }
   }
   return out;
+}
+/* =============================================================
+   §9. 分析單一檔案（核心邏輯，主執行緒與 Worker 共用）
+   ---------------------------------------------------------------
+   這個函式刻意跟「怎麼跑」（主執行緒直接呼叫，還是丟給
+   detect-worker.js 在背景執行緒跑）完全脫鉤：只吃 File 物件，
+   吐出一份純資料（可以直接用 postMessage 結構化複製傳遞，沒有
+   函式、沒有 File 參照、沒有 DOM 物件）。
+
+   刻意不做的兩件事，都是因為它們只有在主執行緒才有意義：
+   - 不指派 id（id 要在主執行緒統一發放，避免多個 Worker 平行跑
+     的時候搶號碼）
+   - 不建立預覽用的 Blob URL（見 app.js 的 attachPreview()）——
+     URL.createObjectURL 在 Worker 裡技術上也能用，但「哪個 File
+     參照才是正本」這件事只在主執行緒清楚，索性把這一步留在那邊。
+
+   app.js 的 analyzeFile() 是這個函式的薄包裝：呼叫這裡（可能經過
+   Worker 池，也可能在失敗時退回本機直接呼叫），拿到結果後再補上
+   id／file／previewUrl 這幾個「執行環境相關」的欄位。
+   ============================================================= */
+var HEAD_LEN = 4096;
+
+async function analyzeFileCore(file, relPath){
+  var name = relPath || file.name;
+  var claimed = getExt(name);
+  var bytes, readError = null;
+  // 讀取失敗不能只是靜默 catch——使用者會以為這個檔案「檢查過沒問題」，
+  // 實際上我們根本沒讀到內容。把錯誤原因記下來，下面轉成一則風險說明顯示。
+  try{ bytes = await readBytes(file, 0, HEAD_LEN); }
+  catch(e){ bytes = new Uint8Array(0); readError = (e && e.message) ? e.message : String(e); }
+
+  var r = {
+    name:name, claimed:claimed || '(無)',
+    size:file.size, mtime:file.lastModified || 0,
+    head:bytes.subarray(0, Math.min(bytes.length, 64)),
+    readError:readError,
+    previewKind:null, previewMime:null
+  };
+
+  if(!bytes.length){
+    r.type='other'; r.format='空檔案或無法讀取'; r.suggestExt='-'; r.suggestFirst='';
+    r.verdict='unknown'; r.rawHex=''; r.hex='-';
+    r.risks = filenameRisks(name);
+    if(readError){
+      r.risks.unshift({level:'high', title:t('risk.readErrorTitle'),
+        text:t('risk.readErrorText', {reason: readError})});
+    }
+  } else {
+    var rawHex = hexOf(bytes.subarray(0, Math.min(bytes.length, 64)));
+    var det = await resolveSignature(file, bytes, rawHex);
+    r.rawHex = rawHex;
+    r.hex = rawHex.slice(0,16).replace(/(..)/g,'$1 ').trim();
+    if(det){
+      r.type = det.type; r.format = det.name;
+      r.suggestExtGeneric = !!det.generic;
+      r.suggestExt = det.generic ? '' : det.ext.join(' ');
+      r.suggestFirst = det.ext[0];
+      r.verdict = det.ext.indexOf(claimed) >= 0 ? 'match' : 'mismatch';
+      if(det.generic && TEXT_EXT.has(claimed)) r.verdict = 'match';
+      // 只決定「這個檔案可以用哪種方式預覽」，不在這裡真的建立 Blob URL——
+      // 見上面檔案頂端的說明。
+      var mp = MEDIA_PREVIEW[det.name];
+      if(mp){ r.previewKind = mp.kind; r.previewMime = mp.mime; }
+      r.zipEntries = det.entries || null;
+      r.cfbNames = det.cfbNames || null;
+    } else {
+      r.type='other'; r.format='未知簽章'; r.suggestExt='-'; r.suggestFirst='';
+      r.verdict='unknown';
+    }
+
+    var extra = [];
+    if(det){
+      var trailingResult = await checkTrailing(file, det, bytes);
+      r.trailing = trailingResult.trailing;
+      extra = extra.concat(trailingResult.risks);
+      if(det.name === 'PDF') extra = extra.concat(await pdfRisks(file));
+    }
+    r.risks = filenameRisks(name).concat(contentRisks(r, det)).concat(extra);
+  }
+  r.high = r.risks.some(function(x){ return x.level === 'high'; });
+  return r;
 }

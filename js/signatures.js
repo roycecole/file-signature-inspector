@@ -165,3 +165,115 @@ SIGS.forEach(function(s){ s.ext.forEach(function(e){ if(!EXT_SIG_MAP[e]) EXT_SIG
 Object.keys(ZIP_FAMILY).forEach(function(e){
   if(!EXT_SIG_MAP[e]) EXT_SIG_MAP[e] = {magic:"504B0304", family:ZIP_FAMILY[e], isZip:true};
 });
+
+/* -------------------------------------------------------------
+   自訂簽章（Custom Signatures）
+   ---------------------------------------------------------------
+   讓使用者自己加入公司內部格式的開頭位元組。存在 localStorage，
+   跟「已檢查標記」那個功能一樣是本工具會在裝置上留下紀錄的地方，
+   但性質不同：這裡存的是使用者自己輸入的格式定義（名稱、副檔名、
+   magic hex），跟任何檔案內容或檔案清單完全無關，所以不像「已檢查
+   標記」那樣需要額外開關保護，預設就會記住。
+
+   資料形狀刻意跟 SIGS 裡的項目一致（多一個 custom:true 標記），
+   這樣 detectors.js 的 resolveSignature() 不需要為了自訂簽章
+   另外寫一套判斷邏輯，直接混進同一份排序好的清單裡比對就好。
+   ------------------------------------------------------------- */
+var CUSTOM_SIG_KEY = 'fsi-custom-sigs';
+var CUSTOM_SIG_TYPES = ['image','doc','text','exec','other'];
+
+function isValidCustomSigShape(s){
+  return !!(s && typeof s.name === 'string' && s.name &&
+    Array.isArray(s.ext) && s.ext.length &&
+    typeof s.magic === 'string' && /^[0-9A-F]+$/.test(s.magic) && s.magic.length % 2 === 0 &&
+    CUSTOM_SIG_TYPES.indexOf(s.type) >= 0);
+}
+function loadCustomSigs(){
+  try{
+    var raw = localStorage.getItem(CUSTOM_SIG_KEY);
+    if(!raw) return [];
+    var arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter(isValidCustomSigShape) : [];
+  }catch(e){ return []; }
+}
+function saveCustomSigs(){
+  try{ localStorage.setItem(CUSTOM_SIG_KEY, JSON.stringify(customSigs)); }
+  catch(e){ /* 隱私模式或容量已滿：這次記不住，但不影響本次瀏覽階段的使用 */ }
+}
+var customSigs = loadCustomSigs();
+
+// 驗證使用者在表單裡填的內容，回傳 {ok:true, sig:{...}} 或
+// {ok:false, errorKey:'sig.errXxx'}（errorKey 對應 i18n.js 的翻譯鍵）。
+// 純粹是資料驗證，不碰 DOM——表單怎麼收集輸入、怎麼顯示錯誤訊息是
+// app.js 的事，這裡只負責「這組輸入合不合理」。
+function validateCustomSig(name, extRaw, hexRaw, type){
+  name = (name || '').trim();
+  if(!name) return {ok:false, errorKey:'sig.errName'};
+
+  var exts = String(extRaw || '').split(/[\s,，、]+/).map(function(e){
+    e = e.trim().toLowerCase();
+    if(!e) return null;
+    if(e.charAt(0) !== '.') e = '.' + e;
+    return e;
+  }).filter(function(e){ return !!e; });
+  if(!exts.length) return {ok:false, errorKey:'sig.errExt'};
+
+  var hex = String(hexRaw || '').trim().toUpperCase().replace(/\s+/g, '');
+  if(!hex || hex.length % 2 !== 0 || !/^[0-9A-F]+$/.test(hex)) return {ok:false, errorKey:'sig.errHex'};
+
+  if(customSigs.some(function(s){ return s.name === name; })) return {ok:false, errorKey:'sig.errDup'};
+  if(CUSTOM_SIG_TYPES.indexOf(type) < 0) type = 'other';
+
+  return {ok:true, sig:{name:name, ext:exts, magic:hex, type:type, custom:true}};
+}
+
+function addCustomSig(sig){
+  customSigs.push(sig);
+  // 只在這個副檔名還沒有對應簽章時才補進 EXT_SIG_MAP，不覆蓋內建的項目
+  sig.ext.forEach(function(e){ if(!EXT_SIG_MAP[e]) EXT_SIG_MAP[e] = {magic:sig.magic, name:sig.name}; });
+  saveCustomSigs();
+}
+function removeCustomSig(name){
+  var sig = customSigs.find(function(s){ return s.name === name; });
+  customSigs = customSigs.filter(function(s){ return s.name !== name; });
+  if(sig){
+    sig.ext.forEach(function(e){ if(EXT_SIG_MAP[e] && EXT_SIG_MAP[e].name === sig.name) delete EXT_SIG_MAP[e]; });
+  }
+  saveCustomSigs();
+}
+
+// 匯出成 JSON 字串，方便分享給同事——他們用「匯入」貼上同一份檔案
+// 就能拿到一模一樣的自訂簽章設定，不用一筆一筆手動輸入。
+function exportCustomSigsJson(){
+  return JSON.stringify({ tool:'file-signature-inspector-custom-sigs', version:1, sigs:customSigs }, null, 2);
+}
+
+// 匯入：接受兩種格式，一種是 exportCustomSigsJson() 產生的
+// {tool, version, sigs:[...]}，另一種是單純的簽章陣列（方便手寫或
+// 用其他工具產生）。同名的簽章一律跳過、不覆蓋既有設定，避免不小心
+// 匯入一份舊檔案就把剛調整好的定義蓋掉。回傳的統計數字給 UI 顯示
+// 「新增了幾筆、跳過了幾筆、幾筆格式不對被忽略」。
+function importCustomSigsJson(jsonText){
+  var data;
+  try{ data = JSON.parse(jsonText); }
+  catch(e){ return {added:0, skipped:0, invalid:0, error:'parse'}; }
+
+  var list = Array.isArray(data) ? data : (data && Array.isArray(data.sigs) ? data.sigs : null);
+  if(!list) return {added:0, skipped:0, invalid:0, error:'shape'};
+
+  var added = 0, skipped = 0, invalid = 0;
+  list.forEach(function(s){
+    if(!isValidCustomSigShape(s)){ invalid++; return; }
+    if(customSigs.some(function(x){ return x.name === s.name; })){ skipped++; return; }
+    addCustomSig({ name:s.name, ext:s.ext.slice(), magic:s.magic, type:s.type, custom:true });
+    added++;
+  });
+  return {added:added, skipped:skipped, invalid:invalid};
+}
+
+// detectors.js 的 resolveSignature() 用這個取代直接掃 SIGS——自訂簽章
+// 跟內建簽章混在同一份依 magic 長度排序的清單裡比對，公平比長度，
+// 不會因為是自訂的就特別優先或墊後。
+function allSigsSorted(){
+  return customSigs.concat(SIGS).sort(function(a,b){ return b.magic.length - a.magic.length; });
+}
