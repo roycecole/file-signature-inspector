@@ -1,0 +1,621 @@
+/* =============================================================
+   styles.css — 檔案簽章鑑識台 樣式表
+   ---------------------------------------------------------------
+   章節索引（用編輯器搜尋「N. 」可以快速跳過去）：
+     1. 色彩變數（Design Tokens）
+     2. 版面基礎 / Header
+     3. 拖放區與檔案/資料夾選擇按鈕
+     4. 高風險警示橫幅 / 摘要標籤 / 說明區塊
+     5. 控制列（搜尋、篩選、動作按鈕）
+     6. 結果表格
+     7. 展開列的明細面板
+     8. SHA-256 雜湊列 / 燈箱預覽 / 提示訊息
+     9. 頁尾參考資料
+     10. 未啟用 JavaScript 的提示 / 無障礙操作說明
+     11. 動態效果（CSS animation / transition）
+     12. 手機／觸控裝置版面（響應式）
+
+   配色分深色（預設變數）與淺色（html[data-theme="light"] 覆蓋），
+   兩套變數的 key 完全對應，只要動 :root 或 [data-theme="light"]
+   其中一邊，記得也檢查另一邊的對比度。
+   ============================================================= */
+
+  
+/* ============================================================
+   1. 色彩變數（Design Tokens）— 深色為預設，淺色用 [data-theme="light"] 覆蓋
+   ============================================================ */
+:root{
+    --bg:#0d1117; --bg-glow:#14202f; --panel:#12171f; --panel-2:#161c25;
+    --border:#263041; --border-soft:#1c2430; --text:#e6edf3; --muted:#7d8a9c;
+    --img:#5aa9ff; --doc:#e0a53c; --match:#3fb96a; --mismatch:#f0575a;
+    --danger:#ff4d4f; --danger-bg:rgba(255,77,79,.13);
+    --byte-neutral-bg:#1c2430; --byte-match-bg:rgba(63,185,106,.16);
+    --byte-mismatch-bg:rgba(240,87,90,.22); --byte-mismatch-border:#c9484c;
+    --hover:#3a4a63; --shadow:rgba(0,0,0,.55);
+    --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono','Courier New',monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Noto Sans TC','PingFang TC','Microsoft JhengHei','Helvetica Neue',Arial,sans-serif;
+  }
+  html[data-theme="light"]{
+    --bg:#f3f5f8; --bg-glow:#e4ecf7; --panel:#ffffff; --panel-2:#eef1f6;
+    --border:#d9dfe7; --border-soft:#e8ecf1; --text:#1a222c; --muted:#5b6672;
+    --img:#1863c9; --doc:#96650a; --match:#1f8a4c; --mismatch:#c62f37;
+    --danger:#c1121f; --danger-bg:rgba(193,18,31,.08);
+    --byte-neutral-bg:#eef1f6; --byte-match-bg:rgba(31,138,76,.12);
+    --byte-mismatch-bg:rgba(198,47,55,.12); --byte-mismatch-border:#c62f37;
+    --hover:#a8b6c8; --shadow:rgba(20,30,45,.28);
+  }
+  
+/* ============================================================
+   2. 版面基礎 / Header
+   ============================================================ */
+*{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:radial-gradient(1200px 500px at 15% -10%,var(--bg-glow) 0%,transparent 60%),var(--bg);
+    color:var(--text); font-family:var(--sans); padding:36px 18px 80px;
+    transition:background .2s,color .2s;
+  }
+  .wrap{max-width:1180px;margin:0 auto;}
+
+  header{margin-bottom:24px;}
+  .header-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .lang-theme-group{display:flex;gap:8px;flex-wrap:wrap;}
+  .tag{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:12px;}
+  .tag .dot{width:6px;height:6px;border-radius:50%;background:var(--match);box-shadow:0 0 8px var(--match);}
+  .theme-toggle{
+    font-family:var(--mono);font-size:12px;font-weight:600;border:1px solid var(--border);
+    background:var(--panel);color:var(--text);padding:7px 12px;border-radius:20px;cursor:pointer;
+    margin-bottom:12px;transition:border-color .15s;
+  }
+  .theme-toggle:hover{border-color:var(--hover);}
+  h1{font-family:var(--mono);font-size:27px;font-weight:700;margin:0 0 10px;letter-spacing:-.01em;}
+  h1 .byte{color:var(--muted);}
+  header p{color:var(--muted);font-size:14.5px;line-height:1.7;max-width:70ch;margin:0;}
+  header p b{color:var(--text);}
+
+  
+/* ============================================================
+   3. 拖放區與檔案/資料夾選擇按鈕
+   ============================================================ */
+#dropzone{
+    margin-top:22px;border:1.5px dashed var(--border);border-radius:10px;background:var(--panel);
+    padding:32px 24px;text-align:center;cursor:pointer;transition:border-color .15s;
+  }
+  #dropzone:hover{border-color:var(--hover);}
+  #dropzone.drag{border-color:var(--img);}
+  #dropzone .icon{font-family:var(--mono);font-size:13px;color:var(--muted);display:block;margin-bottom:10px;}
+  #dropzone strong{font-size:15.5px;font-weight:600;}
+  #dropzone span.sub{display:block;margin-top:6px;font-size:13px;color:var(--muted);}
+  .pickrow{display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap;}
+
+  .progress{margin-top:12px;font-family:var(--mono);font-size:12.5px;color:var(--muted);}
+
+  
+/* ============================================================
+   4. 高風險警示橫幅 / 摘要標籤 / 說明區塊
+   ============================================================ */
+.alertbar{
+    margin-top:16px;display:flex;gap:12px;align-items:flex-start;
+    border:1px solid var(--danger);border-left:5px solid var(--danger);
+    background:var(--danger-bg);border-radius:9px;padding:14px 16px;
+  }
+  .alertbar .ic{flex:none;width:24px;height:24px;border-radius:50%;background:var(--danger);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;}
+  .alertbar h3{margin:0 0 5px;font-size:14.5px;font-weight:700;color:var(--danger);}
+  .alertbar p{margin:0;font-size:13px;line-height:1.7;color:var(--text);}
+
+  .summary{display:flex;flex-wrap:wrap;gap:9px;margin-top:16px;}
+  .chip{font-family:var(--mono);font-size:12.5px;border:1px solid var(--border);border-radius:7px;padding:7px 11px;background:var(--panel);color:var(--muted);}
+  .chip b{color:var(--text);font-weight:600;}
+  .chip.img b{color:var(--img);} .chip.doc b{color:var(--doc);}
+  .chip.danger{border-color:var(--danger);} .chip.danger b{color:var(--danger);}
+
+  .rename-note{margin-top:16px;display:flex;gap:12px;border:1px solid var(--border);border-left:4px solid var(--doc);background:var(--panel);border-radius:9px;padding:14px 16px 15px;font-size:13.5px;}
+  .rename-note-icon{flex:none;width:24px;height:24px;border-radius:50%;background:rgba(224,165,60,.16);color:var(--doc);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:700;font-size:14px;margin-top:1px;}
+  .rename-note-body{min-width:0;}
+  .rename-note-title{margin:0 0 9px;font-weight:700;font-size:14.5px;color:var(--text);line-height:1.5;}
+  .rename-note-list{margin:0 0 10px;padding-left:19px;color:var(--muted);line-height:1.75;}
+  .rename-note-list li{margin-bottom:5px;}
+  .rename-note-list b{color:var(--text);font-weight:600;}
+  .rename-note-list code{font-family:var(--mono);background:var(--panel-2);padding:1px 5px;border-radius:4px;color:var(--text);}
+  .rename-note-hint{margin:0;color:var(--muted);font-size:12.5px;line-height:1.7;}
+  .rename-note-exception{margin:10px 0 0;padding:9px 11px;border-radius:7px;background:var(--danger-bg);border:1px solid var(--danger);font-size:12.5px;line-height:1.7;color:var(--text);}
+  .rename-note-exception b{color:var(--danger);}
+
+  
+/* ============================================================
+   5. 控制列（搜尋、篩選、動作按鈕）
+   ============================================================ */
+.controls{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:16px;}
+  .ctl-left{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .filter-label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:7px;cursor:pointer;}
+  .filter-label input{accent-color:var(--img);}
+  .searchbox{
+    font-family:var(--sans);font-size:13px;padding:7px 11px;border-radius:7px;
+    border:1px solid var(--border);background:var(--panel);color:var(--text);width:190px;
+  }
+  .searchbox:focus{outline:none;border-color:var(--img);}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap;}
+  button{
+    font-family:var(--sans);font-size:13.5px;font-weight:600;padding:8px 13px;border-radius:7px;
+    border:1px solid var(--border);background:var(--panel-2);color:var(--text);cursor:pointer;transition:border-color .15s;
+  }
+  button:hover{border-color:var(--hover);}
+  button:disabled{opacity:.5;cursor:default;}
+
+  
+/* ============================================================
+   6. 結果表格
+   ============================================================ */
+#tableWrap{margin-top:14px;border:1px solid var(--border);border-radius:10px;overflow:auto;background:var(--panel);}
+  table{width:100%;border-collapse:collapse;font-size:13px;min-width:1080px;}
+  thead th{
+    text-align:left;font-family:var(--mono);font-weight:600;font-size:11.5px;letter-spacing:.02em;
+    color:var(--muted);padding:9px 11px;border-bottom:1px solid var(--border);
+    position:sticky;top:0;background:var(--panel);z-index:2;white-space:nowrap;
+  }
+  thead th.sortable{cursor:pointer;user-select:none;}
+  thead th.sortable:hover{color:var(--img);}
+  thead th .arrow{opacity:.35;margin-left:3px;}
+  thead th.active{color:var(--img);}
+  thead th.active .arrow{opacity:1;}
+  tbody td{padding:8px 11px;border-bottom:1px solid var(--border-soft);vertical-align:middle;}
+  tbody tr.datarow{cursor:pointer;}
+  tbody tr.datarow:hover{background:var(--panel-2);}
+  tbody tr.datarow.danger td{background:var(--danger-bg);}
+  tbody tr.datarow.danger td:first-child{box-shadow:inset 4px 0 0 var(--danger);}
+  td.name{font-weight:500;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  td.num{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap;text-align:right;}
+  td.time{font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap;}
+  td.ext{font-family:var(--mono);color:var(--muted);white-space:nowrap;}
+  td.fmt{max-width:200px;}
+  td.preview{width:50px;}
+  .thumb{width:38px;height:38px;border-radius:6px;object-fit:cover;border:1px solid var(--border);display:block;background:var(--panel-2);cursor:zoom-in;}
+  .thumb-placeholder{width:38px;height:38px;border-radius:6px;border:1px dashed var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:15px;background:var(--panel-2);}
+  .thumb-placeholder.exec{border:1px solid var(--danger);color:var(--danger);background:var(--danger-bg);}
+  .thumb-placeholder.media{cursor:zoom-in;transition:transform .12s,border-color .15s;}
+  .thumb-placeholder.media:hover{transform:scale(1.08);border-color:var(--img);}
+  .thumb-placeholder.toolarge{border-style:dashed;border-color:var(--doc);color:var(--doc);}
+  .thumb-placeholder.toolarge:hover{border-color:var(--doc);}
+  td.rowaction{width:70px;white-space:nowrap;text-align:right;}
+  .icon-btn{
+    width:24px;height:24px;border-radius:6px;border:1px solid var(--border);background:var(--panel-2);
+    color:var(--muted);font-size:12px;line-height:1;display:inline-flex;align-items:center;justify-content:center;
+    cursor:pointer;padding:0;margin-left:4px;
+  }
+  .icon-btn:hover{border-color:var(--img);color:var(--img);}
+  .icon-btn.rm:hover{border-color:var(--mismatch);color:var(--mismatch);}
+
+  .kind-pill{font-family:var(--mono);font-size:11px;padding:2px 7px;border-radius:5px;display:inline-block;white-space:nowrap;}
+  .kind-pill.img{color:var(--img);background:rgba(90,169,255,.1);}
+  .kind-pill.doc{color:var(--doc);background:rgba(224,165,60,.1);}
+  .kind-pill.text{color:var(--match);background:rgba(63,185,106,.1);}
+  .kind-pill.exec{color:#fff;background:var(--danger);font-weight:700;}
+  .kind-pill.other{color:var(--muted);background:rgba(125,138,156,.1);}
+  .verdict{font-family:var(--mono);font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:5px;white-space:nowrap;display:inline-flex;align-items:center;gap:5px;}
+  .verdict.match{color:var(--match);background:rgba(63,185,106,.12);}
+  .verdict.mismatch{color:var(--mismatch);background:rgba(240,87,90,.12);}
+  .verdict.unknown{color:var(--muted);background:rgba(125,138,156,.1);}
+  .verdict.danger{color:#fff;background:var(--danger);}
+  .chev{font-size:10px;transition:transform .15s;display:inline-block;}
+  .chev.open{transform:rotate(90deg);}
+
+  
+/* ============================================================
+   7. 展開列的明細面板（風險說明、位元組傾印、SHA-256、ZIP/CFB 目錄）
+   ============================================================ */
+tr.detail-row td{padding:0;border-bottom:1px solid var(--border-soft);background:var(--panel-2);}
+  .detail-panel{padding:16px 18px 18px;}
+  .detail-warning{border:1px solid var(--danger);border-left:4px solid var(--danger);background:var(--danger-bg);border-radius:8px;padding:11px 13px;margin:0 0 13px;}
+  .detail-warning.info{border-color:var(--border);border-left-color:var(--doc);background:var(--panel);}
+  .detail-warning h4{margin:0 0 5px;font-size:13.5px;color:var(--danger);font-weight:700;}
+  .detail-warning.info h4{color:var(--doc);}
+  .detail-warning p{margin:0;font-size:12.5px;line-height:1.75;color:var(--text);}
+  .detail-note{font-size:12.5px;line-height:1.75;color:var(--muted);margin:0 0 13px;max-width:82ch;}
+  .detail-note b{color:var(--text);}
+  .dsec{margin-top:15px;}
+  .dsec-title{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--muted);margin-bottom:7px;text-transform:uppercase;}
+  .dsec-title-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px;}
+  .dsec-title-row .dsec-title{margin-bottom:0;}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:12.5px;}
+  .kv dt{color:var(--muted);white-space:nowrap;}
+  .kv dd{margin:0;font-family:var(--mono);word-break:break-all;}
+
+  .hexdump{font-family:var(--mono);font-size:11.5px;line-height:1.65;background:var(--panel);border:1px solid var(--border);border-radius:7px;padding:10px 12px;overflow-x:auto;}
+  .hexdump .off{color:var(--muted);}
+  .hexdump .as{color:var(--muted);}
+  .hexdump .hl{color:var(--mismatch);font-weight:700;}
+
+  .bytegrid-wrap{overflow-x:auto;padding-bottom:2px;}
+  .byterow{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+  .byterow .rowlabel{font-family:var(--mono);font-size:11px;color:var(--muted);width:112px;flex:none;}
+  .bytecells{display:flex;gap:4px;}
+  .bytecell{font-family:var(--mono);font-size:12px;font-weight:600;width:30px;height:26px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:4px;background:var(--byte-neutral-bg);color:var(--text);border:1px solid transparent;}
+  .bytecell.match{background:var(--byte-match-bg);color:var(--match);}
+  .bytecell.mismatch{background:var(--byte-mismatch-bg);color:var(--mismatch);border-color:var(--byte-mismatch-border);}
+  .bytecell.empty{background:transparent;color:var(--muted);border:1px dashed var(--border);}
+  .legend{display:flex;gap:16px;margin-top:9px;font-size:11.5px;color:var(--muted);flex-wrap:wrap;}
+  .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .legend i{width:12px;height:12px;border-radius:3px;display:inline-block;}
+  .legend i.match{background:var(--byte-match-bg);}
+  .legend i.mismatch{background:var(--byte-mismatch-bg);border:1px solid var(--byte-mismatch-border);}
+  .legend i.empty{border:1px dashed var(--border);}
+
+  
+/* ============================================================
+   8. SHA-256 雜湊列 / 燈箱預覽 / 提示訊息（toast）
+   ============================================================ */
+.hashrow{display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+  .hashval{font-family:var(--mono);font-size:12px;word-break:break-all;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:6px 9px;flex:1;min-width:260px;}
+  .minibtn{font-size:12px;padding:6px 10px;border-radius:6px;}
+  .vt-link{font-size:12px;color:var(--img);text-decoration:none;border-bottom:1px dotted var(--img);}
+
+  .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;z-index:100;padding:28px;cursor:zoom-out;animation:fadeIn .15s ease-out;}
+  .lightbox-media{max-width:100%;max-height:100%;display:flex;cursor:default;animation:scaleIn .18s ease-out;}
+  .lightbox img,.lightbox video{max-width:92vw;max-height:82vh;border-radius:8px;box-shadow:0 12px 44px var(--shadow);background:#000;display:block;}
+  .lightbox img{background:#fff;}
+  .lightbox-close{
+    position:absolute;top:18px;right:18px;width:38px;height:38px;border-radius:50%;
+    border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.4);color:#fff;font-size:16px;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,transform .12s;
+  }
+  .lightbox-close:hover{background:rgba(0,0,0,.65);}
+  .lightbox-close:active{transform:scale(.92);}
+  .audio-panel{
+    display:flex;flex-direction:column;align-items:center;gap:16px;
+    background:var(--panel);border-radius:14px;padding:36px 40px;min-width:300px;
+  }
+  .audio-panel .audio-icon{font-size:42px;}
+  .audio-panel audio{width:320px;}
+  .pdf-panel{display:flex;flex-direction:column;align-items:center;gap:10px;width:92vw;max-width:900px;}
+  .pdf-panel iframe{width:100%;height:80vh;border:none;border-radius:8px;background:#fff;}
+  .pdf-panel .vt-link{color:#fff;border-bottom:1px dotted #fff;}
+  .toolarge-panel{
+    display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;
+    background:var(--panel);border-radius:14px;padding:34px 30px;max-width:360px;
+  }
+  .toolarge-panel .toolarge-icon{font-size:38px;}
+  .toolarge-panel p{margin:0;font-size:13px;line-height:1.7;color:var(--text);}
+  .toolarge-panel p b{color:var(--doc);}
+  .lightbox .cap{position:absolute;bottom:16px;left:0;right:0;text-align:center;color:#e6edf3;font-family:var(--mono);font-size:12.5px;padding:0 20px;}
+
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--text);color:var(--bg);font-size:13px;font-weight:600;padding:9px 16px;border-radius:20px;z-index:200;box-shadow:0 6px 20px var(--shadow);}
+
+  .note{margin-top:20px;font-size:12.5px;color:var(--muted);line-height:1.7;}
+  .note code{font-family:var(--mono);background:var(--panel-2);padding:1px 5px;border-radius:4px;}
+  .limitbox{margin-top:14px;border:1px solid var(--border);border-left:4px solid var(--muted);background:var(--panel);border-radius:9px;padding:13px 15px;}
+  .limitbox h4{margin:0 0 7px;font-size:13.5px;font-weight:700;}
+  .limitbox ul{margin:0;padding-left:19px;font-size:12.5px;line-height:1.75;color:var(--muted);}
+  .limitbox li{margin-bottom:4px;}
+  .limitbox b{color:var(--text);}
+
+  .refsection{margin-top:28px;}
+  .refsection summary{font-family:var(--mono);font-size:16px;font-weight:700;color:var(--text);cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;margin-bottom:8px;user-select:none;}
+  .refsection summary::-webkit-details-marker{display:none;}
+  .refsection summary::before{content:'\25B8';font-size:13px;color:var(--muted);transition:transform .15s;display:inline-block;}
+  .refsection[open] summary::before{transform:rotate(90deg);}
+  .refsection summary:hover,.refsection summary:hover::before{color:var(--img);}
+  .ref-intro{font-size:12.5px;color:var(--muted);line-height:1.7;margin:10px 0 14px;max-width:78ch;}
+  .ref-tablewrap{border:1px solid var(--border);border-radius:10px;overflow:auto;background:var(--panel);}
+  table.ref-table{width:100%;border-collapse:collapse;font-size:13px;min-width:680px;}
+  table.ref-table thead th{text-align:left;font-family:var(--mono);font-weight:600;font-size:11.5px;color:var(--muted);padding:10px 12px;border-bottom:1px solid var(--border);background:var(--panel);}
+  table.ref-table tbody td{padding:9px 12px;border-bottom:1px solid var(--border-soft);vertical-align:top;}
+  table.ref-table tbody tr:hover{background:var(--panel-2);}
+  table.ref-table td.ext{font-family:var(--mono);color:var(--muted);white-space:nowrap;}
+  table.ref-table tr.grouphead td{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--muted);background:var(--panel-2);padding:7px 12px;}
+  td.hexref{font-family:var(--mono);font-size:12.5px;white-space:nowrap;}
+  td.hexref .wild{color:var(--muted);opacity:.7;}
+  .hexnote{margin-top:4px;font-family:var(--sans);font-size:11.5px;color:var(--muted);white-space:normal;line-height:1.5;max-width:44ch;}
+
+  .empty-state{padding:26px;text-align:center;color:var(--muted);font-size:13px;}
+  .duptag{
+    display:inline-block;margin-left:6px;font-family:var(--mono);font-size:10.5px;font-weight:700;
+    color:var(--doc);border:1px solid var(--doc);border-radius:4px;padding:0 5px;white-space:nowrap;
+  }
+  tr.moreRow td{background:var(--panel-2);border-bottom:none;}
+  .morebar{
+    display:flex;align-items:center;gap:10px;justify-content:center;
+    padding:10px;font-size:12.5px;color:var(--muted);flex-wrap:wrap;
+  }
+
+  .hidden{display:none !important;}
+
+  /* ============================================================
+     鍵盤焦點樣式
+     ------------------------------------------------------------
+     這幾個元素是「自己加 tabindex/role 做出來的」互動元件（不是原生
+     <button>），瀏覽器預設的焦點樣式在不同瀏覽器上深淺不一，統一補上
+     清楚的焦點外框，讓鍵盤使用者看得到游標在哪一列/哪個縮圖上。
+     ============================================================ */
+  tr.datarow:focus-visible{
+    outline:2px solid var(--img); outline-offset:-2px;
+  }
+  .thumb:focus-visible,
+  .thumb-placeholder.media:focus-visible{
+    outline:2px solid var(--img); outline-offset:2px;
+  }
+  .lightbox-close:focus-visible,
+  button:focus-visible,
+  .icon-btn:focus-visible,
+  .minibtn:focus-visible,
+  .theme-toggle:focus-visible,
+  a:focus-visible{
+    outline:2px solid var(--img); outline-offset:2px;
+  }
+  .refsection summary:focus-visible{
+    outline:2px solid var(--img); outline-offset:2px; border-radius:4px;
+  }
+  ::-webkit-scrollbar{height:9px;width:9px;}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:5px;}
+
+
+/* ============================================================
+   9. 頁尾參考資料（References）
+   ============================================================ */
+footer.refs{
+  margin-top:40px;padding-top:22px;border-top:1px solid var(--border);
+}
+footer.refs h2{
+  font-family:var(--mono);font-size:14px;font-weight:700;margin:0 0 10px;color:var(--muted);
+  letter-spacing:.03em;text-transform:uppercase;
+}
+footer.refs ul{margin:0;padding:0;list-style:none;display:grid;gap:9px;}
+footer.refs li{font-size:12.5px;line-height:1.6;color:var(--muted);}
+footer.refs a{color:var(--img);text-decoration:none;border-bottom:1px dotted var(--img);font-weight:600;}
+footer.refs a:hover{border-bottom-style:solid;}
+footer.refs .refnote{color:var(--muted);}
+footer.refs .built{margin-top:16px;font-family:var(--mono);font-size:11.5px;color:var(--muted);}
+
+/* ============================================================
+   10. 未啟用 JavaScript 的提示 / 無障礙操作說明
+   ============================================================ */
+.noscript-warning{
+  border:2px solid var(--danger);
+  border-left:6px solid var(--danger);
+  background:var(--danger-bg);
+  border-radius:10px;
+  padding:18px 20px;
+  margin:20px 0;
+}
+.noscript-warning h2{
+  margin:0 0 10px; font-size:16px; font-weight:700; color:var(--danger);
+  display:flex; align-items:center; gap:8px;
+}
+.noscript-warning p{ margin:0 0 8px; font-size:13.5px; line-height:1.75; color:var(--text); }
+.noscript-warning p:last-child{ margin-bottom:0; }
+.noscript-warning .lang-block{
+  padding-top:10px; margin-top:10px; border-top:1px dashed var(--border);
+}
+.noscript-warning .lang-tag{
+  font-family:var(--mono); font-size:11px; color:var(--muted);
+  letter-spacing:.05em; display:block; margin-bottom:4px;
+}
+
+.a11ysection{ margin-top:20px; }
+.a11ysection summary{
+  font-family:var(--mono); font-size:14px; font-weight:700; color:var(--text);
+  cursor:pointer; list-style:none; display:flex; align-items:center; gap:8px;
+  user-select:none; padding:4px 0;
+}
+.a11ysection summary::-webkit-details-marker{ display:none; }
+.a11ysection summary::before{
+  content:'\25B8'; font-size:12px; color:var(--muted); display:inline-block; transition:transform .18s ease-out;
+}
+.a11ysection[open] summary::before{ transform:rotate(90deg); }
+.a11ysection summary:hover, .a11ysection summary:hover::before{ color:var(--img); }
+.a11ysection summary:focus-visible{ outline:2px solid var(--img); outline-offset:2px; border-radius:4px; }
+.a11y-body{
+  border:1px solid var(--border); border-left:4px solid var(--match);
+  background:var(--panel); border-radius:9px; padding:14px 16px; margin-top:8px;
+}
+.a11y-body h3{
+  margin:14px 0 7px; font-size:13px; font-weight:700; color:var(--text);
+  font-family:var(--mono); letter-spacing:.02em;
+}
+.a11y-body h3:first-child{ margin-top:0; }
+.a11y-body p{ margin:0 0 8px; font-size:12.5px; line-height:1.75; color:var(--muted); }
+.a11y-body ul{ margin:0 0 8px; padding-left:19px; font-size:12.5px; line-height:1.8; color:var(--muted); }
+.a11y-body li{ margin-bottom:3px; }
+.a11y-body b{ color:var(--text); }
+kbd{
+  font-family:var(--mono); font-size:11px; background:var(--panel-2);
+  border:1px solid var(--border); border-bottom-width:2px; border-radius:4px;
+  padding:1px 6px; color:var(--text); white-space:nowrap;
+}
+
+/* ============================================================
+   11. 動態效果（CSS animation / transition）
+   ------------------------------------------------------------
+   全部用 CSS 內建的 animation／transition 做，不靠 JS 算時間軸。
+   進場動畫用 @keyframes（元素一插入 DOM 就會自動播放一次）；
+   互動回饋（hover/active）用 transition。
+   最後的 prefers-reduced-motion 區塊會在使用者的系統設定裡開了
+   「減少動態效果」時，把所有動畫/轉場都關掉——這是無障礙基本禮貌，
+   不是可有可無的裝飾。
+   ============================================================ */
+@keyframes fadeIn{ from{opacity:0} to{opacity:1} }
+@keyframes fadeInUp{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+@keyframes scaleIn{ from{opacity:0; transform:scale(.94);} to{opacity:1; transform:scale(1);} }
+@keyframes toastIn{ from{opacity:0; transform:translate(-50%,10px);} to{opacity:1; transform:translate(-50%,0);} }
+@keyframes pulseText{ 0%,100%{opacity:.55} 50%{opacity:1} }
+@keyframes floatY{ 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+@keyframes chipPop{ 0%{transform:scale(.92); opacity:0} 60%{transform:scale(1.04)} 100%{transform:scale(1); opacity:1} }
+@keyframes dangerGlow{
+  0%,100%{ box-shadow:0 0 0 0 rgba(255,77,79,0); }
+  50%{ box-shadow:0 0 0 4px rgba(255,77,79,.18); }
+}
+@keyframes barSlide{ from{ background-position:0 0; } to{ background-position:36px 0; } }
+@keyframes expandDown{ from{opacity:0; transform:translateY(-4px);} to{opacity:1; transform:translateY(0);} }
+
+.toast{ animation:toastIn .22s ease-out; }
+.detail-panel{ animation:expandDown .2s ease-out; }
+.alertbar{ animation:fadeInUp .2s ease-out; }
+.chip{ animation:chipPop .22s ease-out; }
+.progress:not(.hidden){ animation:pulseText 1.4s ease-in-out infinite; }
+#dropzone.drag{ animation:pulseText 1s ease-in-out infinite; }
+#dropzone .icon{ animation:floatY 3.4s ease-in-out infinite; }
+
+/* 表格列進場：用 nth-child 做出輕微的階梯延遲，讓一批結果是「刷」進來
+   而不是整塊突然出現。只對前 12 列做延遲，再多就沒有意義且會拖慢感受。 */
+tbody tr.datarow{ animation:fadeInUp .16s ease-out both; }
+tbody tr.datarow:nth-child(1){ animation-delay:0ms; }
+tbody tr.datarow:nth-child(2){ animation-delay:14ms; }
+tbody tr.datarow:nth-child(3){ animation-delay:28ms; }
+tbody tr.datarow:nth-child(4){ animation-delay:42ms; }
+tbody tr.datarow:nth-child(5){ animation-delay:56ms; }
+tbody tr.datarow:nth-child(6){ animation-delay:70ms; }
+tbody tr.datarow:nth-child(7){ animation-delay:84ms; }
+tbody tr.datarow:nth-child(8){ animation-delay:98ms; }
+tbody tr.datarow:nth-child(n+9){ animation-delay:110ms; }
+
+/* 高風險列：非常輕微的呼吸光暈，只跑三次就停，避免變成一直閃的干擾源 */
+tbody tr.datarow.danger{ animation:fadeInUp .16s ease-out both, dangerGlow 1.6s ease-in-out 3; }
+.verdict.danger{ animation:dangerGlow 1.6s ease-in-out 3; }
+
+/* 掃描進度：底下加一條會滑動的斜紋，表示「正在處理但不知道還要多久」 */
+.progress:not(.hidden)::after{
+  content:''; display:block; height:3px; margin-top:7px; border-radius:2px;
+  background:repeating-linear-gradient(115deg,
+    var(--img) 0 10px, transparent 10px 18px, var(--img) 18px 20px, transparent 20px 36px);
+  opacity:.5;
+  animation:barSlide .7s linear infinite;
+}
+
+button,.icon-btn,.minibtn,.theme-toggle{
+  transition:border-color .15s, background-color .15s, color .15s, transform .12s, box-shadow .15s;
+}
+button:active,.icon-btn:active,.minibtn:active,.theme-toggle:active{ transform:scale(.96); }
+.theme-toggle:hover{ transform:translateY(-1px); }
+
+.thumb{ transition:transform .15s, box-shadow .15s; }
+.thumb:hover{ transform:scale(1.06); box-shadow:0 4px 14px var(--shadow); }
+
+/* 表格列的 hover：桌機版用底色，手機卡片版用輕微浮起，兩者感受不同但都不干擾閱讀 */
+tbody tr.datarow{ transition:background-color .13s, border-color .15s, box-shadow .15s, transform .13s; }
+.chip{ transition:border-color .15s, transform .12s; }
+.chip:hover{ transform:translateY(-1px); border-color:var(--hover); }
+
+/* 展開箭頭、對照表折疊箭頭 */
+.chev{ transition:transform .18s ease-out; }
+details.refsection summary::before{ transition:transform .18s ease-out; }
+.refsection summary{ transition:color .15s; }
+
+/* 燈箱背景加一點模糊，讓前景媒體更突出（不支援 backdrop-filter 的瀏覽器
+   會直接忽略這行，仍然有半透明黑底，不影響可用性） */
+.lightbox{ backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); }
+
+/* 主題切換時讓大面積的顏色平滑過渡，而不是瞬間跳色 */
+body, .panel, #tableWrap, tbody tr.datarow, .chip, #dropzone, .rename-note, .limitbox{
+  transition:background-color .2s ease, border-color .2s ease, color .2s ease;
+}
+
+a{ transition:border-bottom-color .15s, color .15s; }
+.searchbox{ transition:border-color .15s, box-shadow .15s; }
+.searchbox:focus{ box-shadow:0 0 0 3px rgba(90,169,255,.15); }
+
+@media (hover:hover){
+  tbody tr.datarow:hover{ border-color:var(--hover); }
+}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:0.001ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:0.001ms !important;
+    scroll-behavior:auto !important;
+  }
+}
+
+/* ============================================================
+   12. 手機／觸控裝置版面（響應式）
+   ------------------------------------------------------------
+   兩個斷點：
+   - 720px 以下：結果表格從「表格」切換成「卡片列表」
+     （用 data-label 屬性 + ::before{content:attr(data-label)} 補回欄位名稱，
+     這個屬性是 app.js 的 render() 在產生每個 <td> 時就寫好的）
+   - 480px 以下：字級、內距再收斂一次，給小尺寸手機用
+   所有可點擊元素（按鈕、圖示按鈕）在觸控斷點下都放大到至少 36px，
+   符合一般觸控目標的建議最小尺寸。
+   ============================================================ */
+@media (max-width: 720px){
+  body{ padding:22px 12px 60px; }
+  h1{ font-size:22px; }
+  header p{ font-size:13.5px; }
+
+  .header-top{ justify-content:space-between; }
+
+  #dropzone{ padding:24px 14px; }
+  .pickrow button{ flex:1 1 auto; min-height:40px; }
+
+  .controls{ flex-direction:column; align-items:stretch; }
+  .ctl-left{ flex-direction:column; align-items:stretch; gap:10px; }
+  .searchbox{ width:100%; }
+  .btnrow{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .btnrow button{ width:100%; min-height:40px; }
+
+  .icon-btn{ width:34px; height:34px; }
+  .minibtn{ min-height:34px; padding:7px 12px; }
+
+  /* --- 表格 → 卡片列表 --- */
+  #tableWrap{ border:none; background:transparent; overflow:visible; }
+  table{ min-width:0; }
+  thead{ display:none; }
+  tbody, tr, td{ display:block; width:100%; }
+
+  /* 卡片本身改用 Grid：左欄放縮圖（跨前兩列），右欄放所有欄位。
+     之前是把 td.preview 設成 position:absolute 浮在右上角，但那樣縮圖
+     會脫離文件流，蓋住右側靠右對齊的「大小」「修改時間」等數值——
+     檔名短的時候特別明顯。改用 Grid 之後縮圖有自己的欄位寬度，
+     不會跟任何內容重疊，也不需要再靠 padding-right 硬留空間。 */
+  tbody tr.datarow{
+    border:1px solid var(--border); border-radius:10px; background:var(--panel);
+    margin-bottom:10px; padding:8px 6px;
+    display:grid; grid-template-columns:auto 1fr; column-gap:10px; align-items:start;
+  }
+  tbody tr.datarow.danger{ border-color:var(--danger); }
+  tbody tr.datarow td{
+    border-bottom:none; padding:5px 8px; display:flex; align-items:center;
+    justify-content:space-between; gap:10px; min-height:28px;
+    grid-column:2; width:auto;
+  }
+  td.preview{
+    grid-column:1; grid-row:1 / span 2;
+    padding:4px !important; width:auto; min-height:0;
+    display:flex; align-items:center; justify-content:center;
+  }
+  tbody tr.datarow td[data-label]:not([data-label=""])::before{
+    content:attr(data-label); font-family:var(--mono); font-size:10.5px;
+    color:var(--muted); flex:none; margin-right:10px;
+  }
+  td.name{ font-weight:600; white-space:normal; max-width:none; }
+  td.rowaction{ justify-content:flex-end !important; }
+  td.fmt{ max-width:none; text-align:right; white-space:normal; }
+
+  /* 明細列要橫跨整張卡片，不能只待在 Grid 的右欄 */
+  tr.detail-row{ display:block; }
+  tr.detail-row td{ display:block; padding:0; grid-column:1 / -1; }
+  .detail-panel{ padding:14px; }
+  .kv{ grid-template-columns:1fr; gap:2px 0; }
+  .kv dt{ margin-top:6px; }
+
+  tr.moreRow{ display:block; }
+  tr.moreRow td{ display:block; }
+
+  .lightbox-close{ top:10px; right:10px; }
+  .audio-panel{ padding:26px 20px; min-width:0; width:88vw; }
+  .audio-panel audio{ width:100%; }
+
+  footer.refs ul{ gap:12px; }
+  /* 觸控裝置上 hover 不適用，改用 :active 給按下時的回饋 */
+  tbody tr.datarow:active{ transform:scale(.995); box-shadow:0 2px 10px var(--shadow); }
+}
+
+@media (max-width: 480px){
+  h1{ font-size:19px; }
+  .tag{ font-size:11px; }
+  .rename-note{ flex-direction:column; }
+  .rename-note-icon{ margin-bottom:4px; }
+  .btnrow{ grid-template-columns:1fr; }
+  .summary{ gap:7px; }
+  .chip{ font-size:11.5px; padding:6px 9px; }
+}
+
