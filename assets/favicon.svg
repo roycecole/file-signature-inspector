@@ -1,0 +1,24 @@
+<!--
+  favicon.svg : 網站圖示。
+  一份文件（代表被檢查的檔案）加上一個放大鏡（代表「鑑識/檢查」），
+  配色沿用深色主題的 bg／img 變數值，在瀏覽器分頁列的淺色或
+  深色背景下都看得清楚。
+
+  用 SVG 而不是 PNG/ICO：現代瀏覽器（Chrome、Firefox、Edge、
+  Safari 16+）都支援 SVG favicon，向量圖在高解析度螢幕上不會模糊，
+  而且不需要額外的圖檔轉檔工具，符合這個專案「不依賴外部工具」的
+  原則。不支援 SVG favicon 的舊瀏覽器就是分頁上不顯示圖示，不影響
+  網站功能。
+
+  注意給以後維護的人：XML 註解裡不能出現連續兩個減號，
+  所以這裡故意不用一長串 - 或 = 當作分隔線。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#0d1117"/>
+  <rect x="13" y="9" width="27" height="35" rx="3" fill="#1c2430" stroke="#3a4a63" stroke-width="2"/>
+  <line x1="18.5" y1="18.5" x2="34.5" y2="18.5" stroke="#7d8a9c" stroke-width="2.6" stroke-linecap="round"/>
+  <line x1="18.5" y1="25.5" x2="34.5" y2="25.5" stroke="#7d8a9c" stroke-width="2.6" stroke-linecap="round"/>
+  <line x1="18.5" y1="32.5" x2="28" y2="32.5" stroke="#7d8a9c" stroke-width="2.6" stroke-linecap="round"/>
+  <circle cx="40" cy="38" r="12" fill="#0d1117" stroke="#5aa9ff" stroke-width="5"/>
+  <line x1="48.6" y1="46.6" x2="56" y2="54" stroke="#5aa9ff" stroke-width="6.2" stroke-linecap="round"/>
+</svg>
