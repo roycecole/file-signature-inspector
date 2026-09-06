@@ -18,6 +18,8 @@
 ├── test.html                開發用的自我測試頁（詳見下方「開發與測試」）
 ├── CHANGELOG.md              版本異動紀錄
 ├── README.md                 就是這份文件
+├── manifest.json              PWA manifest（可安裝，需 https:// 或 localhost）
+├── service-worker.js          PWA 離線快取（同上，file:// 下不生效但不影響其他功能）
 ├── assets/
 │   └── favicon.svg             網站圖示（純 SVG，不需要額外轉檔工具）
 ├── css/
@@ -26,17 +28,22 @@
     ├── utils.js                共用小工具（HTML escape、格式化、複製到剪貼簿…）
     ├── i18n.js                  多語系字典與翻譯函式（繁中／English／日本語）
     ├── sha256.js                SHA-256 雜湊（WebCrypto 優先，純 JS 備援）
-    ├── signatures.js            簽章表與分類資料（純資料，不含判定邏輯）
-    ├── detectors.js             判定邏輯的核心（ZIP/CFB 解析、文字啟發式、風險判定）
+    ├── sha256-worker.js         SHA-256 的 Web Worker 版本（importScripts 載入 sha256.js）
+    ├── signatures.js            簽章表、分類資料、自訂簽章的儲存/驗證/匯出入
+    ├── detectors.js             判定邏輯核心，含可在主執行緒或 Worker 共用的 analyzeFileCore()
+    ├── detect-worker.js         檔案分析的 Web Worker 版本（importScripts 載入判定邏輯）
     ├── preview.js               縮圖與燈箱（圖片/影片/音訊/PDF 預覽）
+    ├── compare.js               差異比對模式（選兩個檔案並排看位元組差異，範圍可調）
     ├── reference-table.js       頁面下方「常見檔案簽章對照表」的資料與渲染
-    └── app.js                   狀態管理、掃描流程、表格渲染、事件綁定（主程式）
+    └── app.js                   狀態管理、掃描流程、Worker 池、表格渲染、事件綁定（主程式）
 ```
 
 所有 JS 檔案都用傳統的 `<script src="...">` 依序載入，**沒有用模組系統（ES Module / CommonJS）**，也沒有 Webpack、Vite 這類建置工具。每個檔案的頂層函式/變數會掛在全域（`window`）上，後面載入的檔案可以直接使用前面檔案定義好的東西。載入順序寫在 `index.html` 底部，若新增檔案要注意順序：
 
 ```
-utils.js → i18n.js → sha256.js → signatures.js → detectors.js → preview.js → reference-table.js → app.js
+utils.js → i18n.js → sha256.js → signatures.js → detectors.js → preview.js → compare.js → reference-table.js → app.js
+
+（`sha256-worker.js` 與 `detect-worker.js` 不透過 `<script>` 載入，是被對應的 Worker 用 `importScripts()` 動態載入的，跟上面這條主執行緒的載入順序是分開的兩件事。）
 ```
 
 這個順序背後的原則很單純：**先定義資料與工具，再定義用到它們的邏輯，最後才是把畫面組起來的主程式**。`i18n.js` 排在很前面，因為 `detectors.js` 的風險說明文字、`app.js` 的畫面文字都要呼叫它提供的 `t()` 函式。
@@ -54,6 +61,12 @@ utils.js → i18n.js → sha256.js → signatures.js → detectors.js → previe
 | 調整外觀、深色/淺色配色、手機版排版、動畫效果 | `css/styles.css`（檔案開頭有分節索引） |
 | 調整頁面文案、頁尾參考連結 | `index.html`（文案本身透過 `data-i18n` 屬性指向 `js/i18n.js`） |
 | 新增或修改語言、翻譯字串 | `js/i18n.js`（詳見下方「多語系」） |
+| 調整差異比對的比較範圍或畫面 | `js/compare.js` |
+| 調整自訂簽章的驗證規則、匯出入格式 | `js/signatures.js` 的 `validateCustomSig()` / `exportCustomSigsJson()` / `importCustomSigsJson()` |
+| 調整 JSON 匯出的欄位 | `js/app.js` 的 `exportJson()` |
+| 新增一種可辨識的格式，且要能在 Worker 裡跑 | 只要改 `js/detectors.js`／`js/signatures.js`，`analyzeFileCore()` 兩邊共用，不用另外處理 |
+| 調整 Worker 池的大小、逾時時間 | `js/app.js` 的 `DETECT_POOL_SIZE`／`HASH_POOL_SIZE`／`*_TIMEOUT_MS` |
+| 調整 PWA 快取的檔案清單 | `service-worker.js` 的 `CORE_ASSETS` |
 
 ## 多語系（i18n）
 
@@ -85,6 +98,67 @@ utils.js → i18n.js → sha256.js → signatures.js → detectors.js → previe
 `test.html` 跟 `index.html` 一樣是純前端頁面，不需要 Node.js、不需要安裝任何東西，開啟就會自動執行一次；改完程式碼後重新整理這頁，比手動重新拖測試檔案進主頁面快很多。它只載入判定邏輯需要的四個檔案（`utils.js`／`sha256.js`／`signatures.js`／`detectors.js`），不會載入 `app.js` 或 `preview.js`，所以改動 UI 相關的程式碼不會影響這裡的測試結果——這是刻意的設計，讓「邏輯測試」跟「畫面」保持獨立。
 
 如果你的開發環境有 Node.js，也可以把 `test.html` 裡 `buildFixtures()` / `buildTestGroups()` 那段程式碼配合 `utils.js`／`sha256.js`／`signatures.js`／`detectors.js` 一起餵進 Node 的 `vm` 模組執行（Node 18+ 內建 `File`/`Blob`/`crypto.subtle`，不需要額外套件）；這個專案開發過程中就是這樣做回歸測試的，只是沒有另外寫成一個固定的指令稿留在版本庫裡，因為 `test.html` 本身已經涵蓋了同一組案例。
+
+## 鍵盤快速鍵
+
+| 按鍵 | 作用 |
+|---|---|
+| <kbd>/</kbd> | 跳到搜尋框開始輸入 |
+| <kbd>Esc</kbd> | 在搜尋框裡清空內容；已空則離開搜尋框 |
+| <kbd>j</kbd> / <kbd>k</kbd> | 在結果列之間往下／往上移動焦點 |
+| <kbd>r</kbd> | 把目前焦點所在的結果列標記為已檢查／取消 |
+| <kbd>u</kbd> | 復原上一筆誤刪的結果（最多 20 筆） |
+| <kbd>Enter</kbd> / <kbd>Space</kbd> | 展開／收合明細（焦點在結果列時） |
+| <kbd>Tab</kbd> | 在按鈕、搜尋框、結果列、縮圖之間移動 |
+
+快速鍵在輸入框與文字區域內不會作用，也不會覆蓋帶 Ctrl／Cmd／Alt 的瀏覽器原生快捷鍵。實作在 `js/app.js` 底部的全域 `keydown` 監聽器。
+
+## 分次檢查大量檔案的工作流
+
+掃描上百個檔案時，每一列右側的 ✓ 按鈕（或鍵盤 <kbd>r</kbd>）可以標記「這筆我看過了」，配合控制列的「隱藏已檢查」勾選，就能把工作分次做完而不會重複檢視。摘要列會顯示已檢查的進度。
+
+摘要列的統計標籤同時也是篩選器：點「高風險 3」只顯示那三筆，再點一次取消。
+
+## 大檔案的雜湊計算為什麼不會卡住畫面
+
+SHA-256 優先丟給一個 Worker 池（`js/sha256-worker.js` 的多顆實例，數量依 CPU 核心數決定）平行計算，Worker 裡一樣是「WebCrypto 優先、純 JS 備援」。如果瀏覽器不允許建立 Worker（常見於用 `file://` 直接開啟頁面時，部分瀏覽器會限制），`sha256Async()`（`app.js`）會自動偵測並退回主執行緒計算；某一顆 Worker 意外崩潰時會自動補一顆新的頂上維持池子大小。「計算全部 SHA-256」用 `runWithConcurrency()` 限制同時進行的數量，真正平行分派給多顆 Worker，不是排隊等前一個算完才開始下一個。這幾層退回與並行邏輯測得最仔細（`worker_regress.js`／`pool_regress.js`），涵蓋六種失敗情境加上並行度限制。
+
+## 自訂簽章
+
+如果你的組織有自己的檔案格式，可以在頁面上的「自訂簽章」區塊加入名稱、副檔名與開頭 HEX，之後這份工具就能辨識它。設定存在 `localStorage`（key 為 `fsi-custom-sigs`）。跟「已檢查標記」不同，這裡存的是**你輸入的格式定義**，跟任何檔案內容都無關，所以預設就會記住，不需要另外開關。可以用「匯出」把設定存成 JSON 分享給同事，對方用「匯入」就能拿到一樣的設定——同名的簽章匯入時會跳過、不覆蓋既有設定。
+
+新增／修改自訂簽章邏輯在 `js/signatures.js` 的 `validateCustomSig()` / `addCustomSig()` / `removeCustomSig()` / `exportCustomSigsJson()` / `importCustomSigsJson()`，混入判定流程的地方在 `js/detectors.js` 的 `resolveSignature()`（呼叫 `allSigsSorted()`）。因為檔案分析也會丟進 Worker 池執行，新增/移除自訂簽章時 `app.js` 會呼叫 `broadcastCustomSigsToWorkers()` 同步給所有 Worker——Worker 裡沒有 `localStorage`，不主動同步的話會讀不到使用者剛加的簽章。
+
+## 差異比對模式
+
+每列的「⇄」按鈕（或鍵盤 <kbd>c</kbd>）可以把該筆加入比較（最多兩筆），選滿後畫面下方會出現比較列，按下去開啟並排的位元組比較視窗，可以用下拉選單調整比對範圍（256 bytes～64 KB，定義在 `js/compare.js` 的 `COMPARE_CAP_OPTIONS`）。要確認兩個檔案內容是否完全一致，看 SHA-256 是否相同比逐位元組比對整個檔案快得多。
+
+## 匯出格式
+
+除了 CSV／TXT，也可以「匯出 JSON」拿到結構化資料串接其他工具。JSON 的欄位是穩定的英文 key（不會因為介面語言改變），格式名稱與判定結果同時提供語言中立版（`detectedFormat`）與目前語言的顯示版（`detectedFormatDisplay`）。
+
+## PWA：把工具「安裝」起來
+
+如果你是透過網頁伺服器提供這個工具（不是直接用 `file://` 開啟），瀏覽器會提示可以安裝成獨立視窗，離線也能從主畫面／應用程式清單開啟，不用每次都找到資料夾。**用 `file://` 直接開啟 `index.html` 不會有這個選項**——Service Worker 是瀏覽器規格明訂只能在安全情境（https:// 或 http://localhost）下註冊的功能，這是限制，不是這份工具沒做好。兩種用法都完整支援本工具的所有檢查功能，PWA 純粹是「安裝」這個額外選項。
+
+修改快取的檔案清單在 `service-worker.js` 的 `CORE_ASSETS`；新增檔案時記得也要加進這個陣列，`pwa_regress.js`（開發用）有一個反向檢查會提醒你有沒有漏掉。
+
+## 多執行緒：檔案分析與雜湊計算
+
+檔案分析（讀位元組、解析 ZIP/CFB、跑風險判定）與 SHA-256 雜湊都會優先丟給背景執行緒的 Worker 池平行處理，池子大小依 `navigator.hardwareConcurrency` 決定（上限 4 顆）。任一顆 Worker 建立失敗、通訊失敗、逾時或意外崩潰，都會自動退回主執行緒直接運算，或補一顆新的 Worker 頂上——功能不會因為 Worker 出狀況而中斷，只是速度回到單執行緒的水準。
+
+負責這件事的核心函式是 `detectors.js` 的 `analyzeFileCore()`（純邏輯，不含 id 或預覽 Blob 這些「執行環境相關」的欄位）與 `app.js` 的 `runAnalysisCore()` / `sha256Async()`（負責 Worker 池調度與失敗退回）。改動判定邏輯時只要改 `analyzeFileCore()` 本身，主執行緒與 Worker 兩條路徑會自動保持一致，不需要另外同步兩份程式碼。
+
+## 隱私：唯一會在你裝置上留下紀錄的功能
+
+預設情況下這個工具**什麼都不存**。唯一的例外是控制列裡的「記住已檢查標記」，勾選之後：
+
+- 標記為已檢查時，會計算該檔案的 SHA-256 並存進瀏覽器的 `localStorage`（key 為 `fsi-reviewed`）。
+- **只存雜湊值本身**，不存檔名、路徑、大小或任何其他中繼資料。用內容雜湊而非檔名當索引，好處是換名字、換資料夾的同一份檔案仍然認得出來，而且存下來的資料本身看不出原始檔名。
+- 資料只在這台瀏覽器裡，不會上傳。隨時可以按「清除已存記錄」全部刪除。
+- 這個選項**預設關閉**，需要自己勾選。勾選後畫面會出現一段說明提醒你狀態已改變。
+
+另外「複製檢視連結」產生的 URL 只包含檢視條件（搜尋字串、篩選、排序、語言），**不含任何檔名或檔案內容**——檔案從來沒有離開瀏覽器，連結自然也帶不走它們。
 
 ## 無障礙（Accessibility）現況與已知限制
 

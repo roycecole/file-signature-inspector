@@ -1,0 +1,19 @@
+{
+  "_comment": "manifest.json 讓瀏覽器知道這個網站可以被「安裝」成一個看起來像原生 App 的獨立視窗。重要限制：PWA 安裝與 Service Worker 都要求安全情境（https:// 或 http://localhost），用 file:// 直接打開 index.html 並不會觸發安裝提示——這是瀏覽器規格的限制，不是這份 manifest 寫錯。如果你是用 file:// 開啟這個工具，忽略這個檔案即可，工具本身完全不受影響，只是少了『安裝』這個額外功能。想用到這個功能，把整個資料夾放到任何靜態網頁空間（GitHub Pages、公司內部網頁伺服器、或本機用 `python -m http.server` 開一個本地伺服器）即可。",
+
+  "name": "File Signature Inspector 檔案簽章鑑識台",
+  "short_name": "簽章鑑識台",
+  "description": "離線、純前端的檔案簽章檢查工具：比對副檔名與實際格式是否相符，標示偽裝成文件的執行檔，不上傳任何檔案。",
+  "id": "/",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f3f5f8",
+  "theme_color": "#1863c9",
+  "lang": "zh-Hant",
+  "dir": "ltr",
+  "icons": [
+    { "src": "assets/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

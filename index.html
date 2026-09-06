@@ -5,6 +5,47 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>檔案簽章鑑識台（離線版）</title>
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1863c9">
+<!--
+  PWA 安裝與離線快取（manifest.json + service-worker.js）只有在
+  http(s) 情境下才會生效，file:// 開啟時瀏覽器會直接忽略，工具本身
+  不受影響。詳見 manifest.json 開頭的說明與 README「PWA / 安裝」一節。
+-->
+
+<!--
+  Content-Security-Policy：對一個安全用途的工具來說，這是很便宜的加固。
+  - default-src 'none'：預設什麼都不准載，再逐項開放需要的來源
+  - script-src / style-src 'self'：只允許同資料夾下的 .js / .css，
+    杜絕以後不小心引入 CDN，也擋掉注入的行內腳本（本專案沒有行內 script）
+  - worker-src 'self'：SHA-256 與檔案分析都搬到 Web Worker
+    （js/sha256-worker.js、js/detect-worker.js）之後需要的，不然預設會
+    fallback 到 script-src，這裡明講比較清楚
+  - manifest-src 'self'：PWA 的 manifest.json，讓使用者可以「安裝」
+    這個工具（前提是透過 http(s) 提供，見 manifest.json 的說明）
+  - img-src / media-src 'self' blob:：預覽功能會用 URL.createObjectURL()
+    產生 blob: URL 塞進 <img>/<video>/<audio>，所以必須放行 blob:
+  - frame-src blob:：PDF 預覽用 <iframe src="blob:...">
+  - connect-src 'none'：本工具不發任何網路請求，直接全部封死
+  - form-action 'none' / base-uri 'none'：沒有表單，也不需要改變相對路徑基準
+
+  注意：style-src 需要 'unsafe-inline' 是因為 app.js 產生的少數元素帶有
+  行內 style 屬性（例如明細面板裡的 margin 微調）。若要拿掉這一項，
+  得先把那幾處行內 style 改寫成 class。
+-->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'none';
+  script-src 'self';
+  worker-src 'self';
+  manifest-src 'self';
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' blob: data:;
+  media-src 'self' blob:;
+  frame-src blob:;
+  connect-src 'none';
+  form-action 'none';
+  base-uri 'none';
+">
 
 <!--
   這份工具刻意拆成 index.html / css/styles.css / js/*.js 幾個檔案，
@@ -64,6 +105,7 @@
       <button type="button" id="pickFiles" data-i18n="dropzone.pickFiles"></button>
       <button type="button" id="pickDir" data-i18n="dropzone.pickDir"></button>
     </div>
+    <span class="drag-count hidden" id="dragCount" aria-live="polite"></span>
   </div>
   <input type="file" id="fileInput" multiple hidden>
   <input type="file" id="dirInput" webkitdirectory directory multiple hidden>
@@ -96,17 +138,36 @@
              data-i18n-placeholder="controls.searchPlaceholder" data-i18n-aria-label="controls.searchAriaLabel">
       <label class="filter-label"><input type="checkbox" id="filterToggle" checked><span data-i18n="controls.filterLabel"></span></label>
       <label class="filter-label"><input type="checkbox" id="dupOnly"><span data-i18n="controls.dupOnly"></span></label>
+      <label class="filter-label"><input type="checkbox" id="hideReviewed"><span data-i18n="controls.hideReviewed"></span></label>
+      <label class="filter-label" id="persistLabel"><input type="checkbox" id="persistReviewed"><span data-i18n="controls.persistReviewed"></span></label>
     </div>
     <div class="btnrow">
+      <button id="undoBtn" data-i18n="btn.undo"></button>
+      <button id="copyLinkBtn" data-i18n="btn.copyLink"></button>
       <button id="hashAllBtn" data-i18n="btn.hashAll"></button>
       <button id="copyHashBtn" data-i18n="btn.copyHash"></button>
       <button id="csvBtn" data-i18n="btn.csv"></button>
+      <button id="jsonBtn" data-i18n="btn.json"></button>
       <button id="downloadBtn" data-i18n="btn.download"></button>
+      <button id="clearStoredBtn" data-i18n="btn.clearStored"></button>
       <button id="clearBtn" data-i18n="btn.clear"></button>
     </div>
   </div>
 
+  <p class="persist-notice hidden" id="persistNotice" data-i18n="persist.notice"></p>
+
   <div class="summary hidden" id="summary"></div>
+
+  <div id="emptyState" class="empty-guide">
+    <h2 data-i18n="empty.title"></h2>
+    <p data-i18n="empty.p1"></p>
+    <h3 data-i18n="empty.tryTitle"></h3>
+    <ul>
+      <li data-i18n-html="empty.li1"></li>
+      <li data-i18n-html="empty.li2"></li>
+      <li data-i18n-html="empty.li3"></li>
+    </ul>
+  </div>
 
   <div id="tableWrap" class="hidden">
     <table>
@@ -114,6 +175,8 @@
       <tbody id="tbody"></tbody>
     </table>
   </div>
+
+  <div id="compareBar" class="hidden" role="status" aria-live="polite"></div>
 
   <details class="a11ysection">
     <summary data-i18n="a11y.summary"></summary>
@@ -126,6 +189,16 @@
         <li data-i18n-html="a11y.li.esc"></li>
         <li data-i18n-html="a11y.li.dialogtab"></li>
       </ul>
+      <h3 data-i18n="kbd.h.shortcuts"></h3>
+      <ul>
+        <li data-i18n-html="kbd.li.slash"></li>
+        <li data-i18n-html="kbd.li.escSearch"></li>
+        <li data-i18n-html="kbd.li.jk"></li>
+        <li data-i18n-html="kbd.li.review"></li>
+        <li data-i18n-html="kbd.li.compare"></li>
+        <li data-i18n-html="kbd.li.undo"></li>
+      </ul>
+      <p data-i18n="kbd.p.note"></p>
       <h3 data-i18n="a11y.h.screenreader"></h3>
       <ul>
         <li data-i18n-html="a11y.li.rowaria"></li>
@@ -141,6 +214,44 @@
       </ul>
       <h3 data-i18n="a11y.h.known"></h3>
       <p data-i18n="a11y.p.known"></p>
+    </div>
+  </details>
+
+  <details class="a11ysection">
+    <summary data-i18n="sig.summary"></summary>
+    <div class="a11y-body sig-body">
+      <p data-i18n="sig.intro"></p>
+      <form id="sigForm" class="sig-form">
+        <label>
+          <span data-i18n="sig.formName"></span>
+          <input type="text" id="sigName" autocomplete="off">
+        </label>
+        <label>
+          <span data-i18n="sig.formExt"></span>
+          <input type="text" id="sigExt" autocomplete="off" placeholder=".cif, .xyz">
+        </label>
+        <label>
+          <span data-i18n="sig.formHex"></span>
+          <input type="text" id="sigHex" autocomplete="off" placeholder="4D5A" class="mono-input">
+        </label>
+        <label>
+          <span data-i18n="sig.formType"></span>
+          <select id="sigType">
+            <option value="doc" data-i18n="kind.doc"></option>
+            <option value="image" data-i18n="kind.image"></option>
+            <option value="text" data-i18n="kind.text"></option>
+            <option value="exec" data-i18n="kind.exec"></option>
+            <option value="other" data-i18n="kind.other"></option>
+          </select>
+        </label>
+        <button type="submit" data-i18n="sig.formAdd"></button>
+      </form>
+      <div id="sigList"></div>
+      <div class="sig-io-row">
+        <button type="button" id="sigExportBtn" data-i18n="sig.export"></button>
+        <button type="button" id="sigImportBtn" data-i18n="sig.import"></button>
+        <input type="file" id="sigImportInput" accept="application/json,.json" hidden>
+      </div>
     </div>
   </details>
 
@@ -198,6 +309,7 @@
 <script src="js/signatures.js"></script>
 <script src="js/detectors.js"></script>
 <script src="js/preview.js"></script>
+<script src="js/compare.js"></script>
 <script src="js/reference-table.js"></script>
 <script src="js/app.js"></script>
 </body>
