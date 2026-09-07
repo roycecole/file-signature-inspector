@@ -24,13 +24,13 @@ function esc(s){
 }
 
 function hexOf(bytes){
-  var s = '';
-  for(var i = 0; i < bytes.length; i++) s += bytes[i].toString(16).toUpperCase().padStart(2,'0');
+  let s = '';
+  for(let i = 0; i < bytes.length; i++) s += bytes[i].toString(16).toUpperCase().padStart(2,'0');
   return s;
 }
 
-function getExt(n){ var i = n.lastIndexOf('.'); return i > 0 ? n.slice(i).toLowerCase() : ''; }
-function baseName(n){ var i = n.lastIndexOf('.'); return i > 0 ? n.slice(0,i) : n; }
+function getExt(n){ const i = n.lastIndexOf('.'); return i > 0 ? n.slice(i).toLowerCase() : ''; }
+function baseName(n){ const i = n.lastIndexOf('.'); return i > 0 ? n.slice(0,i) : n; }
 
 function ascii(b, s, e){ return String.fromCharCode.apply(null, b.subarray(s,e)); }
 
@@ -51,7 +51,7 @@ function fmtSize(n){
 function pad2(n){ return String(n).padStart(2,'0'); }
 function fmtTime(ms){
   if(!ms) return '-';
-  var d = new Date(ms);
+  const d = new Date(ms);
   return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate())+' '+pad2(d.getHours())+':'+pad2(d.getMinutes());
 }
 
@@ -59,7 +59,7 @@ function fmtTime(ms){
 // role="status" + aria-live="polite"：這是非緊急的提示，螢幕報讀器
 // 會在使用者目前操作的空檔唸出來，不會打斷正在進行的其他朗讀。
 function toast(msg){
-  var el = document.createElement('div');
+  const el = document.createElement('div');
   el.className = 'toast';
   el.setAttribute('role', 'status');
   el.setAttribute('aria-live', 'polite');
@@ -74,7 +74,7 @@ function copyText(t2){
     navigator.clipboard.writeText(t2).then(function(){ toast(t('toast.copied')); }, fallback);
   } else fallback();
   function fallback(){
-    var ta = document.createElement('textarea');
+    const ta = document.createElement('textarea');
     ta.value = t2; ta.style.position = 'fixed'; ta.style.opacity = '0';
     document.body.appendChild(ta); ta.select();
     try{ document.execCommand('copy'); toast(t('toast.copied')); }catch(e){ toast(t('toast.copyFailed')); }

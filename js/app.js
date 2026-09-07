@@ -20,29 +20,31 @@
    §17  事件綁定（放在檔案最後，確保上面用到的函式都已定義）
    ============================================================= */
 
-var $ = function(id){ return document.getElementById(id); };
-var dropzone=$('dropzone'), fileInput=$('fileInput'), dirInput=$('dirInput'),
+const $ = function(id){ return document.getElementById(id); };
+const dropzone=$('dropzone'), fileInput=$('fileInput'), dirInput=$('dirInput'),
     controls=$('controls'), summaryEl=$('summary'), tableWrap=$('tableWrap'),
     tbody=$('tbody'), theadRow=$('theadRow'), filterCk=$('filterToggle'),
     searchBox=$('searchBox'), progressEl=$('progress'),
     alertBar=$('alertBar'), alertTitle=$('alertTitle'), alertText=$('alertText'),
     themeBtn=$('themeToggle'), langBtn=$('langToggle');
 
-var allResults = [], expanded = new Set(), nextId = 1;
-var sortKey = 'risk', sortDir = 1;
-var MAX_FILES = 3000;
-var RENDER_STEP = 150, renderLimit = RENDER_STEP;
-var dupOnlyCk = $('dupOnly');
-var hideReviewedCk = $('hideReviewed');
+let allResults = [], nextId = 1;
+const expanded = new Set();
+let sortKey = 'risk', sortDir = 1;
+const MAX_FILES = 3000;
+const RENDER_STEP = 150;
+let renderLimit = RENDER_STEP;
+const dupOnlyCk = $('dupOnly');
+const hideReviewedCk = $('hideReviewed');
 
 // 摘要 chip 點下去會變成篩選器。null 代表沒有套用任何 chip 篩選；
 // 其餘可能值對應 renderSummary() 裡每個 chip 的 data-filter。
-var chipFilter = null;
+let chipFilter = null;
 
 // 刪除復原用的堆疊。存的是 {result, index}，復原時放回原本的位置，
 // 而不是一律插到最後——誤刪之後清單順序不會莫名其妙改變。
-var undoStack = [];
-var UNDO_LIMIT = 20;
+let undoStack = [];
+const UNDO_LIMIT = 20;
 
 /* ---------------------------------------------------------------
    已檢查標記的本機記憶（預設關閉）
@@ -54,14 +56,14 @@ var UNDO_LIMIT = 20;
    - 只存雜湊值本身，不存檔名、大小、路徑或任何其他中繼資料
    - 隨時可以一鍵清除
    --------------------------------------------------------------- */
-var PERSIST_KEY = 'fsi-reviewed';
-var persistCk = $('persistReviewed');
+const PERSIST_KEY = 'fsi-reviewed';
+const persistCk = $('persistReviewed');
 
 function loadReviewedSet(){
   try{
-    var raw = localStorage.getItem(PERSIST_KEY);
+    let raw = localStorage.getItem(PERSIST_KEY);
     if(!raw) return new Set();
-    var arr = JSON.parse(raw);
+    let arr = JSON.parse(raw);
     return new Set(Array.isArray(arr) ? arr : []);
   }catch(e){ return new Set(); }
 }
@@ -72,7 +74,35 @@ function saveReviewedSet(set){
   try{ localStorage.setItem(PERSIST_KEY, JSON.stringify(Array.from(set))); }
   catch(e){ /* 隱私模式或容量已滿：靜靜失敗，功能仍可用，只是這次記不住 */ }
 }
-var reviewedHashes = loadReviewedSet();
+let reviewedHashes = loadReviewedSet();
+
+// 匯出目前記住的「已檢查」雜湊清單，格式跟自訂簽章的匯出/匯入
+// （signatures.js）刻意保持一致的寫法，方便換電腦或分享給同事合併。
+// 只有雜湊本身，不含檔名——跟 fsi-reviewed 這個 key 存的東西一致。
+function exportReviewedJson(){
+  return JSON.stringify({ tool:'file-signature-inspector-reviewed', version:1, hashes:Array.from(reviewedHashes) }, null, 2);
+}
+
+// 匯入是聯集（merge），不是取代：貼上同事分享的記錄不會清掉自己
+// 原本已經記住的檔案。接受 exportReviewedJson() 的 {tool,version,hashes}
+// 格式，或單純的雜湊字串陣列。
+function importReviewedJson(jsonText){
+  let data;
+  try{ data = JSON.parse(jsonText); }
+  catch(e){ return {added:0, invalid:0, error:'parse'}; }
+
+  let list = Array.isArray(data) ? data : (data && Array.isArray(data.hashes) ? data.hashes : null);
+  if(!list) return {added:0, invalid:0, error:'shape'};
+
+  let added = 0, invalid = 0;
+  list.forEach(function(h){
+    if(typeof h !== 'string' || !/^[0-9a-f]{64}$/i.test(h)){ invalid++; return; }
+    h = h.toLowerCase();
+    if(!reviewedHashes.has(h)){ reviewedHashes.add(h); added++; }
+  });
+  if(added) saveReviewedSet(reviewedHashes);
+  return {added:added, invalid:invalid};
+}
 
 /* ---------------------------------------------------------------
    把目前的檢視狀態同步到網址列 hash
@@ -83,12 +113,12 @@ var reviewedHashes = loadReviewedSet();
    用 replaceState 而不是直接改 location.hash，避免每動一個篩選
    就在瀏覽器歷史裡塞一筆，害使用者按上一頁按半天。
    --------------------------------------------------------------- */
-var applyingHash = false;   // 套用 hash 期間避免又反過來寫回 hash
+let applyingHash = false;   // 套用 hash 期間避免又反過來寫回 hash
 
 function writeHashState(){
   if(applyingHash) return;
-  var parts = [];
-  var q = searchBox.value.trim();
+  let parts = [];
+  let q = searchBox.value.trim();
   if(q) parts.push('q=' + encodeURIComponent(q));
   if(chipFilter) parts.push('chip=' + chipFilter);
   if(!filterCk.checked) parts.push('all=1');            // 預設是勾選的，只記錄「非預設」
@@ -96,27 +126,27 @@ function writeHashState(){
   if(hideReviewedCk && hideReviewedCk.checked) parts.push('hiderev=1');
   if(sortKey !== 'risk' || sortDir !== 1) parts.push('sort=' + sortKey + (sortDir === 1 ? '' : ':desc'));
   if(currentLang !== 'zh') parts.push('lang=' + currentLang);
-  var hash = parts.length ? ('#' + parts.join('&')) : '';
+  let hash = parts.length ? ('#' + parts.join('&')) : '';
   try{
     history.replaceState(null, '', location.pathname + location.search + hash);
   }catch(e){ /* file:// 下某些瀏覽器會擋 replaceState，忽略即可 */ }
 }
 
 function readHashState(){
-  var raw = (location.hash || '').replace(/^#/, '');
+  let raw = (location.hash || '').replace(/^#/, '');
   if(!raw) return;
   applyingHash = true;
   raw.split('&').forEach(function(pair){
-    var i = pair.indexOf('=');
-    var k = i < 0 ? pair : pair.slice(0, i);
-    var v = i < 0 ? '' : decodeURIComponent(pair.slice(i + 1));
+    let i = pair.indexOf('=');
+    let k = i < 0 ? pair : pair.slice(0, i);
+    let v = i < 0 ? '' : decodeURIComponent(pair.slice(i + 1));
     if(k === 'q') searchBox.value = v;
     else if(k === 'chip' && CHIP_FILTERS[v]) chipFilter = v;
     else if(k === 'all') filterCk.checked = false;
     else if(k === 'dup') dupOnlyCk.checked = true;
     else if(k === 'hiderev' && hideReviewedCk) hideReviewedCk.checked = true;
     else if(k === 'sort'){
-      var bits = v.split(':');
+      let bits = v.split(':');
       sortKey = bits[0]; sortDir = (bits[1] === 'desc') ? -1 : 1;
     }
     else if(k === 'lang' && LANGS.indexOf(v) >= 0 && v !== currentLang) setLang(v);
@@ -127,7 +157,7 @@ function readHashState(){
 
 // COLUMNS 的 label 是函式而不是固定字串，因為語言可能中途切換；
 // renderHead() 每次都重新呼叫 c.label() 取得當下語言的欄名。
-var COLUMNS = [
+const COLUMNS = [
   {key:null,     label:function(){return t('col.preview');}, sortable:false},
   {key:'name',   label:function(){return t('col.name');},    sortable:true},
   {key:'size',   label:function(){return t('col.size');},    sortable:true},
@@ -146,12 +176,12 @@ function walkEntry(entry, out, prefix, depth){
     if(entry.isFile){
       entry.file(function(f){ out.push({file:f, path: prefix + f.name}); resolve(); }, function(){ resolve(); });
     } else if(entry.isDirectory && depth < 16){
-      var reader = entry.createReader(), acc = [];
-      var readBatch = function(){
+      let reader = entry.createReader(), acc = [];
+      let readBatch = function(){
         reader.readEntries(function(ents){
           if(!ents.length){
             (async function(){
-              for(var i=0;i<acc.length;i++) await walkEntry(acc[i], out, prefix + entry.name + '/', depth+1);
+              for(let i=0;i<acc.length;i++) await walkEntry(acc[i], out, prefix + entry.name + '/', depth+1);
               resolve();
             })();
           } else { acc = acc.concat(Array.prototype.slice.call(ents)); readBatch(); }
@@ -162,16 +192,16 @@ function walkEntry(entry, out, prefix, depth){
   });
 }
 async function filesFromDataTransfer(dt){
-  var items = dt.items, entries = [];
+  let items = dt.items, entries = [];
   if(items && items.length && items[0].webkitGetAsEntry){
-    for(var i=0;i<items.length;i++){
-      var e = items[i].webkitGetAsEntry && items[i].webkitGetAsEntry();
+    for(let i=0;i<items.length;i++){
+      let e = items[i].webkitGetAsEntry && items[i].webkitGetAsEntry();
       if(e) entries.push(e);
     }
   }
   if(entries.length){
-    var out = [];
-    for(var j=0;j<entries.length;j++) await walkEntry(entries[j], out, '', 0);
+    let out = [];
+    for(let j=0;j<entries.length;j++) await walkEntry(entries[j], out, '', 0);
     if(out.length) return out;
   }
   return Array.prototype.slice.call(dt.files).map(function(f){ return {file:f, path:f.name}; });
@@ -191,18 +221,18 @@ async function filesFromDataTransfer(dt){
    執行緒跑 UI），並限制在 1～4 之間，避免核心數異常多的機器一次開
    太多 Worker 反而拖累（Worker 啟動本身有成本）。
    --------------------------------------------------------------- */
-var detectWorkers = [];
-var detectRR = 0;
-var detectCallbacks = {};
-var detectMsgId = 0;
-var DETECT_TIMEOUT_MS = 30000;
-var DETECT_POOL_SIZE = Math.max(1, Math.min(4, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1));
+const detectWorkers = [];
+let detectRR = 0;
+const detectCallbacks = {};
+let detectMsgId = 0;
+const DETECT_TIMEOUT_MS = 30000;
+const DETECT_POOL_SIZE = Math.max(1, Math.min(4, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1));
 
 function spawnDetectWorker(){
-  var w;
+  let w;
   try{ w = new Worker('js/detect-worker.js'); }catch(e){ return null; }
   w.onmessage = function(e){
-    var d = e.data, cb = d && detectCallbacks[d.reqId];
+    let d = e.data, cb = d && detectCallbacks[d.reqId];
     if(!cb) return;
     delete detectCallbacks[d.reqId];
     cb(d.type === 'result' ? d.result : null, d.type === 'error' ? d.error : null);
@@ -211,9 +241,9 @@ function spawnDetectWorker(){
     // 這顆 worker 掛了：從池子裡換掉，並嘗試補一顆新的頂上，讓池子盡量
     // 維持原本的大小；如果新的也建不起來，就讓池子縮小，剩下的 worker
     // 繼續分擔工作，真的全部掛光才整組退回主執行緒。
-    var idx = detectWorkers.indexOf(w);
+    let idx = detectWorkers.indexOf(w);
     if(idx >= 0) detectWorkers.splice(idx, 1);
-    var replacement = spawnDetectWorker();
+    let replacement = spawnDetectWorker();
     if(replacement) detectWorkers.push(replacement);
   };
   try{ w.postMessage({type:'sync-custom-sigs', sigs: customSigs}); }catch(e){}
@@ -221,8 +251,8 @@ function spawnDetectWorker(){
 }
 function initDetectWorkerPool(){
   if(typeof Worker === 'undefined') return;
-  for(var i = 0; i < DETECT_POOL_SIZE; i++){
-    var w = spawnDetectWorker();
+  for(let i = 0; i < DETECT_POOL_SIZE; i++){
+    let w = spawnDetectWorker();
     if(!w) break; // 第一顆就建不起來，大概率是環境完全不支援（例如 file://），不用再試
     detectWorkers.push(w);
   }
@@ -235,24 +265,33 @@ function broadcastCustomSigsToWorkers(){
 
 function runAnalysisCore(file, relPath){
   return new Promise(function(resolve){
-    function fallbackLocal(){ analyzeFileCore(file, relPath).then(resolve); }
-    if(!detectWorkers.length){ fallbackLocal(); return; }
+    // slow 只在「Worker 真的逾時沒回應」時才標記——單純建立/通訊失敗
+    // 是環境不支援，不算「這個檔案特別慢」，不應該讓使用者誤以為是
+    // 檔案本身的問題。標記會顯示在結果列上，讓使用者知道這筆退回
+    // 主執行緒重算是因為逾時，而不是靜靜多等一段時間卻不知道為什麼。
+    function fallbackLocal(slow){
+      analyzeFileCore(file, relPath).then(function(r){
+        if(slow) r.slowAnalysis = true;
+        resolve(r);
+      });
+    }
+    if(!detectWorkers.length){ fallbackLocal(false); return; }
 
-    var w = detectWorkers[detectRR % detectWorkers.length];
+    let w = detectWorkers[detectRR % detectWorkers.length];
     detectRR++;
 
-    var reqId = ++detectMsgId;
-    var timedOut = false;
-    var timer = setTimeout(function(){
+    let reqId = ++detectMsgId;
+    let timedOut = false;
+    let timer = setTimeout(function(){
       timedOut = true;
       delete detectCallbacks[reqId];
-      fallbackLocal();
+      fallbackLocal(true);
     }, DETECT_TIMEOUT_MS);
 
     detectCallbacks[reqId] = function(result, err){
       if(timedOut) return;
       clearTimeout(timer);
-      if(err || !result) fallbackLocal();
+      if(err || !result) fallbackLocal(false);
       else resolve(result);
     };
 
@@ -261,7 +300,7 @@ function runAnalysisCore(file, relPath){
     }catch(e){
       clearTimeout(timer);
       delete detectCallbacks[reqId];
-      fallbackLocal();
+      fallbackLocal(false);
     }
   });
 }
@@ -274,7 +313,7 @@ function attachPreview(r, file){
   r.previewUrl = null;
   r.previewTooLarge = false;
   if(!r.previewKind) return;
-  var limit = PREVIEW_SIZE_LIMIT[r.previewKind] || Infinity;
+  let limit = PREVIEW_SIZE_LIMIT[r.previewKind] || Infinity;
   if(file.size <= limit){
     try{ r.previewUrl = URL.createObjectURL(file.slice(0, file.size, r.previewMime)); }catch(e){}
   } else {
@@ -283,7 +322,7 @@ function attachPreview(r, file){
 }
 
 async function analyzeFile(file, relPath){
-  var r = await runAnalysisCore(file, relPath);
+  let r = await runAnalysisCore(file, relPath);
   r.id = nextId++;
   r.file = file;
   r.sha256 = null;
@@ -293,7 +332,7 @@ async function analyzeFile(file, relPath){
   return r;
 }
 
-var scanning = false;
+let scanning = false;
 async function handleEntries(list){
   if(scanning) return;
   scanning = true;
@@ -303,7 +342,7 @@ async function handleEntries(list){
     toast(t('toast.tooManyFiles', {n:MAX_FILES}));
   }
   progressEl.classList.remove('hidden');
-  for(var i=0;i<list.length;i++){
+  for(let i=0;i<list.length;i++){
     progressEl.textContent = t('progress.scanning', {i:i+1, n:list.length, path:list[i].path});
     allResults.push(await analyzeFile(list[i].file, list[i].path));
     if(i % 100 === 0){ render(); await new Promise(function(r){ setTimeout(r,0); }); }
@@ -324,26 +363,26 @@ function suggestExtDisplay(r){
 }
 
 function buildMismatchDetail(r){
-  var expected = EXT_SIG_MAP[r.claimed];
+  let expected = EXT_SIG_MAP[r.claimed];
   if(!expected){
     return {hasGrid:false, note:t('detail.noExpectedSig', {ext:esc(r.claimed), format:esc(formatName(r.format))})};
   }
-  var em = expected.magic, ec = em.length/2;
-  var show = Math.min(12, Math.max(ec+2, 8));
-  var cells = [], allMatch = true, comparable = false;
-  for(var i=0;i<show;i++){
-    var ab = r.rawHex.substr(i*2,2) || null;
-    var eb = i < ec ? em.substr(i*2,2) : null;
-    var st = 'empty';
+  let em = expected.magic, ec = em.length/2;
+  let show = Math.min(12, Math.max(ec+2, 8));
+  let cells = [], allMatch = true, comparable = false;
+  for(let i=0;i<show;i++){
+    let ab = r.rawHex.substr(i*2,2) || null;
+    let eb = i < ec ? em.substr(i*2,2) : null;
+    let st = 'empty';
     if(eb && ab){ comparable = true; st = (eb === ab) ? 'match' : 'mismatch'; if(st==='mismatch') allMatch = false; }
     cells.push({eb:eb, ab:ab, st:st});
   }
   // 預期格式的顯示名稱：ZIP 家族要用 family 現組句子（見 signatures.js 的
   // 註解），其餘直接查 FORMAT_NAME_I18N。
-  var expectedDisplay = expected.isZip
+  let expectedDisplay = expected.isZip
     ? t('fmt.zipContainerOf', {family: formatName(expected.family)})
     : formatName(expected.name);
-  var note;
+  let note;
   if(expected.isZip && allMatch && comparable){
     note = t('detail.zipHeaderOk', {
       magic: em.replace(/(..)/g,'$1 ').trim(),
@@ -351,9 +390,9 @@ function buildMismatchDetail(r){
       ext: esc(r.claimed)
     });
   } else {
-    var idx = -1;
-    for(var k=0;k<cells.length;k++){ if(cells[k].st==='mismatch'){ idx=k; break; } }
-    var posText = idx>=0 ? t('detail.byteN', {n:idx+1}) : t('detail.firstFewBytes');
+    let idx = -1;
+    for(let k=0;k<cells.length;k++){ if(cells[k].st==='mismatch'){ idx=k; break; } }
+    let posText = idx>=0 ? t('detail.byteN', {n:idx+1}) : t('detail.firstFewBytes');
     note = t('detail.mismatchExplain', {
       ext: esc(r.claimed),
       expected: '<b>'+esc(expectedDisplay)+'</b>',
@@ -365,14 +404,14 @@ function buildMismatchDetail(r){
 }
 
 function hexDump(bytes, badCount){
-  var out = [], i, j;
+  let out = [], i, j;
   for(i=0;i<bytes.length;i+=16){
-    var offs = i.toString(16).padStart(8,'0');
-    var hexPart = '', asciiPart = '';
+    let offs = i.toString(16).padStart(8,'0');
+    let hexPart = '', asciiPart = '';
     for(j=0;j<16;j++){
       if(i+j < bytes.length){
-        var b = bytes[i+j];
-        var hx = b.toString(16).toUpperCase().padStart(2,'0');
+        let b = bytes[i+j];
+        let hx = b.toString(16).toUpperCase().padStart(2,'0');
         hexPart += (i+j < badCount ? '<span class="hl">'+hx+'</span>' : hx) + ' ';
         asciiPart += (b >= 0x20 && b < 0x7F) ? esc(String.fromCharCode(b)) : '.';
       } else { hexPart += '   '; asciiPart += ' '; }
@@ -384,7 +423,7 @@ function hexDump(bytes, badCount){
 }
 
 function renderDetail(r){
-  var html = '';
+  let html = '';
 
   if(r.risks && r.risks.length){
     html += r.risks.map(function(w){
@@ -394,11 +433,11 @@ function renderDetail(r){
   }
 
   if(r.verdict === 'mismatch'){
-    var d = buildMismatchDetail(r);
+    let d = buildMismatchDetail(r);
     html += '<p class="detail-note">'+d.note+'</p>';
     if(d.hasGrid){
-      var exp = d.cells.map(function(c){ return c.eb===null ? '<span class="bytecell empty">–</span>' : '<span class="bytecell '+c.st+'">'+c.eb+'</span>'; }).join('');
-      var act = d.cells.map(function(c){ return c.ab===null ? '<span class="bytecell empty">–</span>' : '<span class="bytecell '+(c.st==='empty'?'':c.st)+'">'+c.ab+'</span>'; }).join('');
+      let exp = d.cells.map(function(c){ return c.eb===null ? '<span class="bytecell empty">–</span>' : '<span class="bytecell '+c.st+'">'+c.eb+'</span>'; }).join('');
+      let act = d.cells.map(function(c){ return c.ab===null ? '<span class="bytecell empty">–</span>' : '<span class="bytecell '+(c.st==='empty'?'':c.st)+'">'+c.ab+'</span>'; }).join('');
       html += '<div class="bytegrid-wrap">'+
         '<div class="byterow"><span class="rowlabel">'+t('detail.byteGridExpected')+'</span><span class="bytecells">'+exp+'</span></div>'+
         '<div class="byterow"><span class="rowlabel">'+t('detail.byteGridActual')+'</span><span class="bytecells">'+act+'</span></div></div>'+
@@ -415,7 +454,7 @@ function renderDetail(r){
     '</dl></div>';
 
   // 不符時，把「依副檔名本應是簽章」的那幾個位元組在傾印中標紅
-  var badLen = 0;
+  let badLen = 0;
   if(r.verdict === 'mismatch' && EXT_SIG_MAP[r.claimed] && !EXT_SIG_MAP[r.claimed].isZip)
     badLen = EXT_SIG_MAP[r.claimed].magic.length / 2;
   html += '<div class="dsec"><div class="dsec-title-row">'+
@@ -437,19 +476,19 @@ function renderDetail(r){
   html += '</div></div>';
 
   if(r.dupCount > 1){
-    var sibs = (dupIndex[r.sha256] || []).filter(function(x){ return x.id !== r.id; });
+    let sibs = (dupIndex[r.sha256] || []).filter(function(x){ return x.id !== r.id; });
     html += '<div class="dsec"><div class="dsec-title">'+t('detail.dupTitle', {n:r.dupCount})+'</div>'+
             '<div class="hexdump">'+sibs.map(function(x){ return esc(x.name); }).join('<br>')+'</div></div>';
   }
 
   if(r.zipEntries && r.zipEntries.length){
-    var preview = r.zipEntries.slice(0, 12).map(esc).join('<br>');
+    let preview = r.zipEntries.slice(0, 12).map(esc).join('<br>');
     html += '<div class="dsec"><div class="dsec-title">'+t('detail.zipEntriesTitle', {n:r.zipEntries.length})+'</div>'+
             '<div class="hexdump">'+preview+'</div></div>';
   }
 
   if(r.cfbNames && r.cfbNames.length){
-    var cn = r.cfbNames.slice(0, 14).map(function(x){
+    let cn = r.cfbNames.slice(0, 14).map(function(x){
       return esc(x.replace(/[\u0000-\u001F]/g, '·').replace(/[\u3800-\u4DFF]/g, '◇'));
     }).join('<br>');
     html += '<div class="dsec"><div class="dsec-title">'+t('detail.cfbEntriesTitle', {n:r.cfbNames.length})+'</div>'+
@@ -463,9 +502,9 @@ function renderDetail(r){
 function riskRank(r){ return r.high ? 0 : (r.type==='exec' ? 1 : (r.verdict==='mismatch' ? 2 : (r.verdict==='unknown' ? 3 : 4))); }
 
 /* 依 SHA-256 分組，找出內容完全相同的檔案 */
-var dupIndex = {};
+let dupIndex = {};
 function rebuildDupIndex(){
-  var m = {};
+  let m = {};
   allResults.forEach(function(r){
     if(!r.sha256) return;
     (m[r.sha256] = m[r.sha256] || []).push(r);
@@ -479,7 +518,7 @@ function rebuildDupIndex(){
 
 // chip 篩選的判定：每個可點擊的 chip 對應一個判斷函式，
 // renderSummary() 產生 chip 時用同一組 key，兩邊必須一致。
-var CHIP_FILTERS = {
+const CHIP_FILTERS = {
   image:    function(r){ return r.type === 'image'; },
   doc:      function(r){ return r.type === 'doc'; },
   text:     function(r){ return r.type === 'text'; },
@@ -491,8 +530,8 @@ var CHIP_FILTERS = {
 };
 
 function visibleRows(){
-  var q = searchBox.value.trim().toLowerCase();
-  var rows = allResults.filter(function(r){
+  let q = searchBox.value.trim().toLowerCase();
+  let rows = allResults.filter(function(r){
     if(q && r.name.toLowerCase().indexOf(q) < 0) return false;
     if(dupOnlyCk.checked && !r.dupCount) return false;
     if(hideReviewedCk && hideReviewedCk.checked && r.reviewed) return false;
@@ -506,7 +545,7 @@ function visibleRows(){
     return true;
   });
   rows.sort(function(a,b){
-    var va, vb;
+    let va, vb;
     if(sortKey === 'risk'){ va = riskRank(a); vb = riskRank(b); }
     else if(sortKey === 'size' || sortKey === 'mtime'){ va = a[sortKey]; vb = b[sortKey]; }
     else if(sortKey === 'type'){ va = kindLabel(a.type); vb = kindLabel(b.type); }
@@ -521,13 +560,13 @@ function visibleRows(){
 function renderHead(){
   theadRow.innerHTML = COLUMNS.map(function(c){
     if(!c.sortable) return '<th>'+c.label()+'</th>';
-    var active = sortKey === c.key;
-    var arrow = active ? (sortDir === 1 ? '▲' : '▼') : '▲';
+    let active = sortKey === c.key;
+    let arrow = active ? (sortDir === 1 ? '▲' : '▼') : '▲';
     return '<th class="sortable'+(active?' active':'')+'" data-sort="'+c.key+'">'+c.label()+'<span class="arrow">'+arrow+'</span></th>';
   }).join('');
   theadRow.querySelectorAll('th.sortable').forEach(function(th){
     th.addEventListener('click', function(){
-      var k = th.getAttribute('data-sort');
+      let k = th.getAttribute('data-sort');
       if(sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = 1; }
       refilter();
     });
@@ -536,24 +575,25 @@ function renderHead(){
 
 function render(){
   renderHead();
-  var all = visibleRows();
-  var rows = all.slice(0, renderLimit);
-  var html = [];
+  let all = visibleRows();
+  let rows = all.slice(0, renderLimit);
+  let html = [];
 
   rows.forEach(function(r){
-    var isOpen = expanded.has(r.id);
-    var vh;
+    let isOpen = expanded.has(r.id);
+    let vh;
     if(r.high) vh = '<span class="verdict danger">'+t('verdict.high')+'</span>';
     else if(r.verdict === 'match') vh = '<span class="verdict match">'+t('verdict.match')+'</span>';
     else if(r.verdict === 'mismatch') vh = '<span class="verdict mismatch">'+t('verdict.mismatchArrow', {ext:esc(r.suggestFirst||'')})+'</span>';
     else vh = '<span class="verdict unknown">'+t('verdict.unknown')+'</span>';
     vh += ' <span class="chev'+(isOpen?' open':'')+'">▸</span>';
 
-    var prev = buildPreviewCell(r);
+    let prev = buildPreviewCell(r);
 
-    var dupTag = r.dupCount ? ' <span class="duptag" title="'+t('row.dupTitle',{n:r.dupCount})+'">'+t('row.dupTag',{n:r.dupCount})+'</span>' : '';
+    let dupTag = r.dupCount ? ' <span class="duptag" title="'+t('row.dupTitle',{n:r.dupCount})+'">'+t('row.dupTag',{n:r.dupCount})+'</span>' : '';
+    let slowTag = r.slowAnalysis ? ' <span class="slowtag" title="'+esc(t('row.slowTitle'))+'">'+t('row.slowTag')+'</span>' : '';
 
-    var actions = '';
+    let actions = '';
     if(r.verdict === 'mismatch' && r.suggestFirst)
       actions += '<button class="icon-btn" data-fix="'+r.id+'" title="'+t('row.titleFix')+'">⤓</button>';
     actions += '<button class="icon-btn compare" data-compare="'+r.id+'" aria-pressed="'+(isInCompare(r.id)?'true':'false')+'" '+
@@ -563,7 +603,7 @@ function render(){
                'aria-label="'+esc(t(r.reviewed ? 'review.ariaUnmark' : 'review.ariaMark', {name:r.name}))+'">✓</button>';
     actions += '<button class="icon-btn rm" data-remove="'+r.id+'" title="'+t('row.titleRemove')+'">✕</button>';
 
-    var rowVerdictWord = r.high ? t('verdict.high') : r.verdict==='match' ? t('verdict.match') : r.verdict==='mismatch' ? t('verdict.mismatchPlain') : t('verdict.unknown');
+    let rowVerdictWord = r.high ? t('verdict.high') : r.verdict==='match' ? t('verdict.match') : r.verdict==='mismatch' ? t('verdict.mismatchPlain') : t('verdict.unknown');
 
     // data-label 屬性給手機版的卡片版面用（見 styles.css 的 @media 區塊）：
     // 窄螢幕時 <table> 會切換成卡片式排列，每個儲存格前面用 CSS
@@ -577,7 +617,7 @@ function render(){
       'tabindex="0" role="button" aria-expanded="'+(isOpen?'true':'false')+'" '+
       'aria-controls="detail-'+r.id+'" aria-label="'+esc(t('aria.rowLabel',{name:r.name, verdict:rowVerdictWord}))+'">'+
       '<td class="preview" data-label="">'+prev+'</td>'+
-      '<td class="name" data-label="'+t('col.name')+'" title="'+esc(r.name)+'">'+esc(r.name)+dupTag+'</td>'+
+      '<td class="name" data-label="'+t('col.name')+'" title="'+esc(r.name)+'">'+esc(r.name)+dupTag+slowTag+'</td>'+
       '<td class="num" data-label="'+t('col.size')+'">'+fmtSize(r.size)+'</td>'+
       '<td class="time" data-label="'+t('col.mtime')+'">'+fmtTime(r.mtime)+'</td>'+
       '<td class="ext" data-label="'+t('col.ext')+'">'+esc(r.claimed)+'</td>'+
@@ -602,9 +642,9 @@ function render(){
   tbody.innerHTML = html.join('');
   tableWrap.classList.toggle('hidden', allResults.length === 0);
   bindRowEvents();
-  var mb = document.getElementById('moreBtn');
+  let mb = document.getElementById('moreBtn');
   if(mb) mb.addEventListener('click', function(){ renderLimit += RENDER_STEP; render(); });
-  var ab = document.getElementById('allBtn');
+  let ab = document.getElementById('allBtn');
   if(ab) ab.addEventListener('click', function(){ renderLimit = Infinity; render(); });
   renderSummary();
 }
@@ -616,7 +656,7 @@ function bindRowEvents(){
   }
 
   tbody.querySelectorAll('tr.datarow').forEach(function(tr){
-    var k = Number(tr.getAttribute('data-key'));
+    let k = Number(tr.getAttribute('data-key'));
     tr.addEventListener('click', function(e){
       if(e.target.closest('button') || e.target.closest('a') || e.target.closest('[data-zoom]')) return;
       toggleRow(k);
@@ -662,14 +702,14 @@ function bindRowEvents(){
   tbody.querySelectorAll('[data-copy-hash]').forEach(function(b){
     b.addEventListener('click', function(e){
       e.stopPropagation();
-      var r = allResults.find(function(x){ return x.id === Number(b.getAttribute('data-copy-hash')); });
+      let r = allResults.find(function(x){ return x.id === Number(b.getAttribute('data-copy-hash')); });
       if(r && r.sha256) copyText(r.sha256);
     });
   });
   tbody.querySelectorAll('[data-copy-hex]').forEach(function(b){
     b.addEventListener('click', function(e){
       e.stopPropagation();
-      var r = allResults.find(function(x){ return x.id === Number(b.getAttribute('data-copy-hex')); });
+      let r = allResults.find(function(x){ return x.id === Number(b.getAttribute('data-copy-hex')); });
       if(r && r.head) copyText(hexOf(r.head));
     });
   });
@@ -677,40 +717,40 @@ function bindRowEvents(){
 
 function renderSummary(){
   rebuildDupIndex();
-  var n = allResults.length;
-  var cnt = function(f){ return allResults.filter(f).length; };
-  var high = cnt(function(r){ return r.high; });
+  let n = allResults.length;
+  let cnt = function(f){ return allResults.filter(f).length; };
+  let high = cnt(function(r){ return r.high; });
 
   // 產生一個可點擊的篩選 chip。key 要對應 CHIP_FILTERS 裡的判斷函式。
   // 計數為 0 的 chip 仍然顯示（讓數字位置穩定），但不做成可點擊的，
   // 因為點了只會得到空清單，沒有意義。
   function chip(key, label, count, extraClass){
-    var active = chipFilter === key;
+    let active = chipFilter === key;
     if(!count) return '<div class="chip '+(extraClass||'')+'">'+label+'</div>';
     return '<button type="button" class="chip clickable '+(extraClass||'')+'" '+
            'data-chip="'+key+'" aria-pressed="'+(active?'true':'false')+'" '+
            'title="'+esc(t('filter.chipHint').trim())+'">'+label+'</button>';
   }
 
-  var reviewedCount = cnt(function(r){ return r.reviewed; });
-  var chips = [
+  let reviewedCount = cnt(function(r){ return r.reviewed; });
+  let chips = [
     '<div class="chip">'+t('summary.scanned',{n:n})+'</div>',
     chip('image',    t('summary.image',{n:cnt(CHIP_FILTERS.image)}),       cnt(CHIP_FILTERS.image), 'img'),
     chip('doc',      t('summary.doc',{n:cnt(CHIP_FILTERS.doc)}),           cnt(CHIP_FILTERS.doc), 'doc'),
     chip('text',     t('summary.text',{n:cnt(CHIP_FILTERS.text)}),         cnt(CHIP_FILTERS.text)),
     chip('mismatch', t('summary.mismatch',{n:cnt(CHIP_FILTERS.mismatch)}), cnt(CHIP_FILTERS.mismatch))
   ];
-  var groups = Object.keys(dupIndex).length;
+  let groups = Object.keys(dupIndex).length;
   if(groups){
-    var dupFiles = cnt(CHIP_FILTERS.dup);
-    var wasted = 0;
+    let dupFiles = cnt(CHIP_FILTERS.dup);
+    let wasted = 0;
     Object.keys(dupIndex).forEach(function(h){
-      var g = dupIndex[h];
+      let g = dupIndex[h];
       wasted += g[0].size * (g.length - 1);
     });
     chips.push(chip('dup', t('summary.dup',{groups:groups, files:dupFiles, size:fmtSize(wasted)}), dupFiles));
   }
-  var ex = cnt(CHIP_FILTERS.exec);
+  let ex = cnt(CHIP_FILTERS.exec);
   if(ex) chips.push(chip('exec', t('summary.exec',{n:ex}), ex, 'danger'));
   if(high) chips.push(chip('high', t('summary.high',{n:high}), high, 'danger'));
   if(reviewedCount) chips.push(chip('reviewed', t('summary.reviewed',{done:reviewedCount, total:n}), reviewedCount));
@@ -721,7 +761,7 @@ function renderSummary(){
   // chip 點擊：同一個再點一次就取消篩選（toggle）
   summaryEl.querySelectorAll('[data-chip]').forEach(function(b){
     b.addEventListener('click', function(){
-      var key = b.getAttribute('data-chip');
+      let key = b.getAttribute('data-chip');
       chipFilter = (chipFilter === key) ? null : key;
       if(!chipFilter) toast(t('filter.clearedAll'));
       refilter();
@@ -730,19 +770,23 @@ function renderSummary(){
 
   // 有結果之後把拖放區縮成一條細長的提示，把版面讓給結果清單
   dropzone.classList.toggle('compact', n > 0);
-  var dzTitle = dropzone.querySelector('strong');
+  let dzTitle = dropzone.querySelector('strong');
   if(dzTitle) dzTitle.textContent = n > 0 ? t('dropzone.more') : t('dropzone.title');
 
   // 空狀態引導：只在完全沒有結果時顯示
-  var emptyEl = $('emptyState');
+  let emptyEl = $('emptyState');
   if(emptyEl) emptyEl.classList.toggle('hidden', n > 0);
 
   // 復原按鈕只在真的有東西可以復原時才啟用，避免變成一顆永遠按不動的死鈕
-  var undoBtn = $('undoBtn');
+  let undoBtn = $('undoBtn');
   if(undoBtn) undoBtn.disabled = undoStack.length === 0;
 
+  // 批次重新命名按鈕同理：沒有「副檔名不符且有明確建議」的項目時停用
+  let fixAllBtn = $('fixAllBtn');
+  if(fixAllBtn) fixAllBtn.disabled = !allResults.some(function(r){ return r.verdict === 'mismatch' && r.suggestFirst && !r.suggestExtGeneric; });
+
   // 開啟本機記憶時顯示一段說明，明確告知使用者「這時候開始會留下紀錄」
-  var notice = $('persistNotice');
+  let notice = $('persistNotice');
   if(notice) notice.classList.toggle('hidden', !(persistCk && persistCk.checked));
 
   if(high){
@@ -756,7 +800,7 @@ function renderSummary(){
 // （元素剛被移除、文件本身還沒取得焦點等），而且並非所有節點型別都有
 // closest()，所以這兩層都要防；少了任一層就會在真實瀏覽器裡偶發性拋錯。
 function focusedRow(){
-  var el = document.activeElement;
+  let el = document.activeElement;
   if(!el || typeof el.closest !== 'function') return null;
   return el.closest('tr.datarow');
 }
@@ -783,19 +827,19 @@ function focusedRow(){
    新的頂上，讓池子盡量維持原本大小，不會「壞一顆、少一顆」用到後來
    整組都退回主執行緒。
    --------------------------------------------------------------- */
-var hashWorkers = [];
-var hashRR = 0;
-var workerCallbacks = {};
-var workerMsgId = 0;
-var WORKER_TIMEOUT_MS = 60000; // 一般檔案幾秒內就會有結果，超過一分鐘視為卡死
-var HASH_POOL_SIZE = Math.max(1, Math.min(4, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1));
+const hashWorkers = [];
+let hashRR = 0;
+const workerCallbacks = {};
+let workerMsgId = 0;
+const WORKER_TIMEOUT_MS = 60000; // 一般檔案幾秒內就會有結果，超過一分鐘視為卡死
+const HASH_POOL_SIZE = Math.max(1, Math.min(4, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1));
 
 function spawnHashWorker(){
-  var w;
+  let w;
   try{ w = new Worker('js/sha256-worker.js'); }catch(e){ return null; }
   w.onmessage = function(e){
-    var id = e.data && e.data.id;
-    var cb = workerCallbacks[id];
+    let id = e.data && e.data.id;
+    let cb = workerCallbacks[id];
     if(!cb) return;
     delete workerCallbacks[id];
     cb(e.data.error ? null : e.data.hash, e.data.error);
@@ -804,17 +848,17 @@ function spawnHashWorker(){
     // 這顆掛了：從池子換掉，嘗試補一顆新的頂上。還在等這顆回應的請求
     // 沒辦法個別得知是哪些，交給 sha256Async() 自己的逾時機制去退回
     // 主執行緒即可，不需要在這裡特別處理。
-    var idx = hashWorkers.indexOf(w);
+    let idx = hashWorkers.indexOf(w);
     if(idx >= 0) hashWorkers.splice(idx, 1);
-    var replacement = spawnHashWorker();
+    let replacement = spawnHashWorker();
     if(replacement) hashWorkers.push(replacement);
   };
   return w;
 }
 function initHashWorkerPool(){
   if(typeof Worker === 'undefined') return;
-  for(var i = 0; i < HASH_POOL_SIZE; i++){
-    var w = spawnHashWorker();
+  for(let i = 0; i < HASH_POOL_SIZE; i++){
+    let w = spawnHashWorker();
     if(!w) break; // 第一顆就建不起來，環境大概率完全不支援，不用再試
     hashWorkers.push(w);
   }
@@ -828,12 +872,12 @@ function sha256Async(file){
     }
     if(!hashWorkers.length){ fallbackMainThread(); return; }
 
-    var w = hashWorkers[hashRR % hashWorkers.length];
+    let w = hashWorkers[hashRR % hashWorkers.length];
     hashRR++;
 
-    var id = ++workerMsgId;
-    var timedOut = false;
-    var timer = setTimeout(function(){
+    let id = ++workerMsgId;
+    let timedOut = false;
+    let timer = setTimeout(function(){
       timedOut = true;
       delete workerCallbacks[id];
       fallbackMainThread();
@@ -862,7 +906,7 @@ function sha256Async(file){
 // 都有事做，不會出現「等最慢的那個」拖累整體速度的情況。
 function runWithConcurrency(items, limit, task){
   return new Promise(function(resolveAll){
-    var idx = 0, active = 0;
+    let idx = 0, active = 0;
     if(!items.length){ resolveAll(); return; }
     function next(){
       if(idx >= items.length && active === 0){ resolveAll(); return; }
@@ -881,7 +925,7 @@ function runWithConcurrency(items, limit, task){
 }
 
 function toggleReviewed(id){
-  var target = allResults.find(function(r){ return r.id === id; });
+  let target = allResults.find(function(r){ return r.id === id; });
   if(!target) return;
   target.reviewed = !target.reviewed;
 
@@ -906,12 +950,12 @@ function toggleReviewed(id){
   // 標記完之後如果「隱藏已檢查」是開著的，這一列會立刻消失；
   // 記住焦點原本在第幾列，重繪後把焦點放到接手該位置的那一列，
   // 讓連續用鍵盤標記一整批檔案時不會每標一次就要重新找位置。
-  var rowsBefore = Array.prototype.slice.call(tbody.querySelectorAll('tr.datarow'));
-  var focusIdx = rowsBefore.indexOf(focusedRow());
+  let rowsBefore = Array.prototype.slice.call(tbody.querySelectorAll('tr.datarow'));
+  let focusIdx = rowsBefore.indexOf(focusedRow());
   render();
   if(focusIdx >= 0){
-    var rowsAfter = tbody.querySelectorAll('tr.datarow');
-    var next = rowsAfter[Math.min(focusIdx, rowsAfter.length - 1)];
+    let rowsAfter = tbody.querySelectorAll('tr.datarow');
+    let next = rowsAfter[Math.min(focusIdx, rowsAfter.length - 1)];
     if(next) next.focus();
   }
 }
@@ -920,7 +964,7 @@ function toggleReviewed(id){
 // 需要雜湊才比對得出來，所以只對已經算過 SHA-256 的項目生效。
 function applyStoredReviewMarks(){
   if(!persistCk || !persistCk.checked || !reviewedHashes.size) return;
-  var changed = false;
+  let changed = false;
   allResults.forEach(function(r){
     if(r.sha256 && !r.reviewed && reviewedHashes.has(r.sha256)){ r.reviewed = true; changed = true; }
   });
@@ -929,7 +973,7 @@ function applyStoredReviewMarks(){
 
 function undoRemove(){
   if(!undoStack.length){ toast(t('toast.nothingToUndo')); return; }
-  var entry = undoStack.pop();
+  let entry = undoStack.pop();
   // 放回原本的索引位置，避免復原之後清單順序莫名其妙變了
   allResults.splice(Math.min(entry.index, allResults.length), 0, entry.result);
   controls.classList.remove('hidden');
@@ -938,20 +982,20 @@ function undoRemove(){
 }
 
 function removeResult(id){
-  var idx = allResults.findIndex(function(r){ return r.id === id; });
+  let idx = allResults.findIndex(function(r){ return r.id === id; });
   if(idx < 0) return;
-  var target = allResults[idx];
+  let target = allResults[idx];
   // 刻意「不」在這裡 revokeObjectURL：使用者可能只是誤按，
   // 一旦 revoke 掉，復原之後縮圖就再也顯示不出來了。
   // 真正的釋放時機改成「被擠出復原堆疊」或「清除全部」。
   undoStack.push({result: target, index: idx});
   if(undoStack.length > UNDO_LIMIT){
-    var dropped = undoStack.shift();
+    let dropped = undoStack.shift();
     if(dropped.result.previewUrl) URL.revokeObjectURL(dropped.result.previewUrl);
   }
   allResults.splice(idx, 1);
   expanded.delete(id);
-  var cIdx = compareSlots.indexOf(id);
+  let cIdx = compareSlots.indexOf(id);
   if(cIdx >= 0){ compareSlots.splice(cIdx, 1); renderCompareBar(); }
   if(!allResults.length){
     summaryEl.classList.add('hidden');
@@ -960,21 +1004,45 @@ function removeResult(id){
   render();
 }
 
-function downloadFixed(id){
-  var r = allResults.find(function(x){ return x.id === id; });
-  if(!r || !r.suggestFirst) return;
-  var plain = r.name.split('/').pop();
-  var newName = baseName(plain) + r.suggestFirst;
-  var url = URL.createObjectURL(r.file);
-  var a = document.createElement('a');
+// 觸發單一檔案的「以建議副檔名重新下載」，不含 toast——單筆按鈕跟
+// 批次按鈕都會用到，各自決定要不要、要怎麼顯示完成提示，避免批次
+// 下載一次跳出 N 則 toast 疊在一起。
+function triggerFixedDownload(r){
+  let plain = r.name.split('/').pop();
+  let newName = baseName(plain) + r.suggestFirst;
+  let url = URL.createObjectURL(r.file);
+  let a = document.createElement('a');
   a.href = url; a.download = newName;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(function(){ URL.revokeObjectURL(url); }, 5000);
-  toast(t('toast.savedAs', {name:newName}));
+  return newName;
+}
+function downloadFixed(id){
+  let r = allResults.find(function(x){ return x.id === id; });
+  if(!r || !r.suggestFirst) return;
+  toast(t('toast.savedAs', {name: triggerFixedDownload(r)}));
+}
+
+// 批次版本：對「目前判定為副檔名不符、且有明確建議副檔名」的每一筆都
+// 重新下載一次（不含只知道「大概是純文字」這種沒有單一明確建議的
+// 通用判定——那種按了也不知道該存成什麼副檔名）。範圍是全部結果，
+// 不受目前搜尋/篩選影響，「全部套用」指的就是全部。
+//
+// 瀏覽器對短時間內觸發大量下載通常會跳出「已封鎖多個檔案下載」之類
+// 的提示，逐筆之間錯開一點時間可以降低被擋的機率；擋下來的話使用者
+// 自己在瀏覽器的下載權限提示按「允許」就能繼續，這裡不強求完美防呆。
+async function downloadAllFixed(){
+  let targets = allResults.filter(function(r){ return r.verdict === 'mismatch' && r.suggestFirst && !r.suggestExtGeneric; });
+  if(!targets.length){ toast(t('toast.fixAllNone')); return; }
+  for(let i = 0; i < targets.length; i++){
+    triggerFixedDownload(targets[i]);
+    if(i < targets.length - 1) await new Promise(function(res){ setTimeout(res, 250); });
+  }
+  toast(t('toast.fixAllDone', {n:targets.length}));
 }
 
 async function computeHash(id){
-  var r = allResults.find(function(x){ return x.id === id; });
+  let r = allResults.find(function(x){ return x.id === id; });
   if(!r || r.sha256 || r.hashing) return;
   r.hashing = true; render();
   try{ r.sha256 = await sha256Async(r.file); }
@@ -983,15 +1051,15 @@ async function computeHash(id){
 }
 
 async function hashAll(){
-  var todo = allResults.filter(function(r){ return !r.sha256; });
+  let todo = allResults.filter(function(r){ return !r.sha256; });
   if(!todo.length){ toast(t('toast.allHashed')); return; }
   progressEl.classList.remove('hidden');
-  var done = 0;
+  let done = 0;
   // 平行度跟 Worker 池的大小一致：沒有任何 Worker 可用時，
   // sha256Async() 會退回主執行緒同步計算，這種情況下開再高的並行度
   // 也沒有意義（主執行緒本來就一次只能做一件事），所以池子是空的時候
   // 並行度退回 1，跟以前逐一處理的行為一致，不會反而變慢或出錯。
-  var concurrency = hashWorkers.length || 1;
+  let concurrency = hashWorkers.length || 1;
   await runWithConcurrency(todo, concurrency, async function(item){
     try{ item.sha256 = await sha256Async(item.file); }catch(e){}
     done++;
@@ -1007,22 +1075,22 @@ async function hashAll(){
 // openLightbox()／buildPreviewCell() 已搬到 preview.js，跟其他預覽相關程式碼放在一起。
 
 function reportRows(){
-  var rows = visibleRows().slice();
+  let rows = visibleRows().slice();
   return rows;
 }
 function stamp(){
-  var d = new Date();
+  let d = new Date();
   return d.getFullYear()+pad2(d.getMonth()+1)+pad2(d.getDate())+'_'+pad2(d.getHours())+pad2(d.getMinutes())+pad2(d.getSeconds());
 }
 function saveBlob(text, filename, mime){
-  var blob = new Blob(['\ufeff' + text], {type: mime});
-  var a = document.createElement('a');
+  let blob = new Blob(['\ufeff' + text], {type: mime});
+  let a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(function(){ URL.revokeObjectURL(a.href); }, 5000);
 }
 function csvCell(v){
-  var s = (v == null ? '' : String(v));
+  let s = (v == null ? '' : String(v));
   return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
 }
 // 把目前套用的篩選條件描述成一串人看得懂的文字，寫進匯出報告。
@@ -1030,14 +1098,14 @@ function csvCell(v){
 // 「這是套了『只看高風險』之後的結果」，日後回頭看會誤以為
 // 當時整批只有 12 個檔案。
 function describeActiveFilters(){
-  var list = [];
-  var q = searchBox.value.trim();
+  let list = [];
+  let q = searchBox.value.trim();
   if(q) list.push(t('export.filterSearch', {q:q}));
   if(filterCk.checked) list.push(t('export.filterKnownOnly'));
   if(dupOnlyCk.checked) list.push(t('export.filterDupOnly'));
   if(hideReviewedCk && hideReviewedCk.checked) list.push(t('export.filterHideReviewed'));
   if(chipFilter){
-    var nameMap = {
+    let nameMap = {
       image:t('kind.image'), doc:t('kind.doc'), text:t('kind.text'), exec:t('kind.exec'),
       mismatch:t('verdict.mismatchPlain'), high:t('export.verdictHigh'),
       dup:t('controls.dupOnly'), reviewed:t('export.reviewed')
@@ -1053,21 +1121,21 @@ function reviewStatusText(r){
 
 function exportCsv(){
   if(!allResults.length) return;
-  var rows = reportRows();
-  var reviewedCount = allResults.filter(function(r){ return r.reviewed; }).length;
+  let rows = reportRows();
+  let reviewedCount = allResults.filter(function(r){ return r.reviewed; }).length;
   // CSV 開頭放兩行以 # 開頭的註記，記錄匯出當下的篩選條件與檢查進度。
   // Excel 會把它們當成一般文字列，不影響下面的表格解析。
-  var lines = [
+  let lines = [
     csvCell('# ' + t('export.activeFilters', {list: describeActiveFilters()})),
     csvCell('# ' + t('export.reviewedSummary', {done: reviewedCount, total: allResults.length}))
   ];
-  var head = [t('col.name'), t('export.sizeBytes'), t('col.size'), t('col.mtime'), t('export.currentExt'),
+  let head = [t('col.name'), t('export.sizeBytes'), t('col.size'), t('col.mtime'), t('export.currentExt'),
     t('col.type'), t('col.format'), t('detail.suggestedExt'), t('col.verdict'), t('export.reviewStatus'),
     t('export.riskNote'), t('export.hex'), t('export.sha256')];
   lines.push(head.map(csvCell).join(','));
   rows.forEach(function(r){
-    var v = r.high ? t('export.verdictHigh') : r.verdict==='match' ? t('verdict.match') : r.verdict==='mismatch' ? t('export.verdictMismatchCsv',{ext:r.suggestFirst}) : t('verdict.unknown');
-    var risk = (r.risks||[]).map(function(w){ return (w.level==='high'?t('export.tagHigh'):t('export.tagInfo'))+w.title; }).join('；');
+    let v = r.high ? t('export.verdictHigh') : r.verdict==='match' ? t('verdict.match') : r.verdict==='mismatch' ? t('export.verdictMismatchCsv',{ext:r.suggestFirst}) : t('verdict.unknown');
+    let risk = (r.risks||[]).map(function(w){ return (w.level==='high'?t('export.tagHigh'):t('export.tagInfo'))+w.title; }).join('；');
     lines.push([r.name, r.size, fmtSize(r.size), fmtTime(r.mtime), r.claimed,
       kindLabel(r.type), formatName(r.format), suggestExtDisplay(r), v, reviewStatusText(r),
       risk, r.hex, r.sha256||''].map(csvCell).join(','));
@@ -1076,11 +1144,11 @@ function exportCsv(){
 }
 function exportTxt(){
   if(!allResults.length) return;
-  var rows = reportRows();
-  var highs = allResults.filter(function(r){ return r.high; });
-  var d = new Date();
-  var ts = d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate())+' '+pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds());
-  var L = [];
+  let rows = reportRows();
+  let highs = allResults.filter(function(r){ return r.high; });
+  let d = new Date();
+  let ts = d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate())+' '+pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds());
+  let L = [];
   L.push('='.repeat(94));
   L.push(t('export.reportTitle'));
   L.push(t('export.checkedAt', {ts:ts}));
@@ -1110,7 +1178,7 @@ function exportTxt(){
   L.push([t('col.name'), t('col.size'), t('col.mtime'), t('col.ext'), t('col.type'), t('col.format'),
     t('detail.suggestedExt'), t('col.verdict'), t('export.reviewStatus'), t('export.hex'), t('export.sha256')].join('\t'));
   rows.forEach(function(r){
-    var v = r.high ? t('export.verdictHigh') : r.verdict==='match' ? t('verdict.match') : r.verdict==='mismatch' ? t('export.verdictMismatchTxt',{ext:r.suggestFirst}) : t('verdict.unknown');
+    let v = r.high ? t('export.verdictHigh') : r.verdict==='match' ? t('verdict.match') : r.verdict==='mismatch' ? t('export.verdictMismatchTxt',{ext:r.suggestFirst}) : t('verdict.unknown');
     L.push([r.name, fmtSize(r.size), fmtTime(r.mtime), r.claimed, kindLabel(r.type),
             formatName(r.format), suggestExtDisplay(r), v, reviewStatusText(r), r.hex, r.sha256||t('export.notCalculated')].join('\t'));
   });
@@ -1123,8 +1191,8 @@ function exportTxt(){
 // 「目前介面語言顯示的版本」，串接的人要哪個都拿得到。
 function exportJson(){
   if(!allResults.length) return;
-  var rows = reportRows();
-  var payload = {
+  let rows = reportRows();
+  let payload = {
     generatedAt: new Date().toISOString(),
     tool: 'file-signature-inspector',
     language: currentLang,
@@ -1178,19 +1246,19 @@ function exportJson(){
    --------------------------------------------------------------- */
 function isTypingTarget(el){
   if(!el) return false;
-  var tag = (el.tagName || '').toLowerCase();
+  let tag = (el.tagName || '').toLowerCase();
   return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable;
 }
 
 function focusAdjacentRow(dir){
-  var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr.datarow'));
+  let rows = Array.prototype.slice.call(tbody.querySelectorAll('tr.datarow'));
   if(!rows.length) return;
-  var current = focusedRow();
-  var idx = current ? rows.indexOf(current) : -1;
-  var nextIdx;
+  let current = focusedRow();
+  let idx = current ? rows.indexOf(current) : -1;
+  let nextIdx;
   if(idx < 0) nextIdx = (dir > 0) ? 0 : rows.length - 1;   // 還沒選任何一列時，j 從頭、k 從尾
   else nextIdx = Math.min(Math.max(idx + dir, 0), rows.length - 1);
-  var target = rows[nextIdx];
+  let target = rows[nextIdx];
   if(target){
     target.focus();
     // 只在必要時捲動，避免每按一次就整頁跳動
@@ -1246,12 +1314,12 @@ document.addEventListener('keydown', function(e){
   if(e.key === 'k'){ e.preventDefault(); focusAdjacentRow(-1); return; }
   if(e.key === 'u'){ e.preventDefault(); undoRemove(); return; }
   if(e.key === 'c'){
-    var crow = focusedRow();
+    let crow = focusedRow();
     if(crow){ e.preventDefault(); toggleCompareSlot(Number(crow.getAttribute('data-key'))); }
     return;
   }
   if(e.key === 'r'){
-    var row = focusedRow();
+    let row = focusedRow();
     if(row){ e.preventDefault(); toggleReviewed(Number(row.getAttribute('data-key'))); }
     return;
   }
@@ -1261,13 +1329,13 @@ document.addEventListener('keydown', function(e){
    自訂簽章管理介面
    --------------------------------------------------------------- */
 function renderSigList(){
-  var el = $('sigList');
+  let el = $('sigList');
   if(!el) return;
   if(!customSigs.length){
     el.innerHTML = '<p class="sig-list-empty">'+t('sig.listEmpty')+'</p>';
     return;
   }
-  var items = customSigs.map(function(s){
+  let items = customSigs.map(function(s){
     return '<li>'+
       '<span class="sig-name">'+esc(s.name)+'</span>'+
       '<span class="sig-meta">'+esc(s.ext.join(' '))+'　·　'+esc(s.magic.replace(/(..)/g,'$1 ').trim())+'　·　'+kindLabel(s.type)+'</span>'+
@@ -1277,7 +1345,7 @@ function renderSigList(){
   el.innerHTML = '<div class="sig-list-title">'+t('sig.listTitle')+'</div><ul class="sig-items">'+items+'</ul>';
   el.querySelectorAll('[data-remove-sig]').forEach(function(b){
     b.addEventListener('click', function(){
-      var name = b.getAttribute('data-remove-sig');
+      let name = b.getAttribute('data-remove-sig');
       removeCustomSig(name);
       broadcastCustomSigsToWorkers();
       toast(t('sig.removed', {name:name}));
@@ -1287,16 +1355,16 @@ function renderSigList(){
 }
 renderSigList();
 
-var sigForm = $('sigForm');
+const sigForm = $('sigForm');
 if(sigForm){
   sigForm.addEventListener('submit', function(e){
     e.preventDefault();
     sigForm.querySelectorAll('.sig-form-error').forEach(function(el){ el.remove(); });
-    var name = $('sigName').value, extRaw = $('sigExt').value,
+    let name = $('sigName').value, extRaw = $('sigExt').value,
         hexRaw = $('sigHex').value, type = $('sigType').value;
-    var result = validateCustomSig(name, extRaw, hexRaw, type);
+    let result = validateCustomSig(name, extRaw, hexRaw, type);
     if(!result.ok){
-      var msg = document.createElement('p');
+      let msg = document.createElement('p');
       msg.className = 'sig-form-error';
       msg.textContent = t(result.errorKey);
       sigForm.appendChild(msg);
@@ -1306,35 +1374,91 @@ if(sigForm){
     broadcastCustomSigsToWorkers();
     toast(t('sig.added', {name:result.sig.name}));
     $('sigName').value = ''; $('sigExt').value = ''; $('sigHex').value = '';
+    resetSigTestRun();
     renderSigList();
   });
 }
 
-var sigExportBtn = $('sigExportBtn');
+/* ---------------------------------------------------------------
+   自訂簽章：儲存前先拿範例檔案試跑
+   ---------------------------------------------------------------
+   讀取使用者選的範例檔案開頭 32 bytes，跟目前 HEX 欄位打的內容比對
+   前綴是否相符，馬上告訴使用者「這組 HEX 對不對」，不用先儲存、
+   跑一輪掃描才發現寫錯。選了範例檔案之後，HEX 欄位每次輸入變動
+   也會重新比對（不用重新選檔案）。
+   --------------------------------------------------------------- */
+let sigTestBytesHex = null;   // 範例檔案開頭 32 bytes 的大寫 HEX，null 代表還沒選檔案
+const sigTestFileInput = $('sigTestFile');
+const sigTestResultEl = $('sigTestResult');
+
+function resetSigTestRun(){
+  sigTestBytesHex = null;
+  if(sigTestFileInput) sigTestFileInput.value = '';
+  if(sigTestResultEl){ sigTestResultEl.classList.add('hidden'); sigTestResultEl.textContent = ''; sigTestResultEl.className = 'sig-testrun-result hidden'; }
+}
+
+function renderSigTestResult(){
+  if(!sigTestResultEl) return;
+  if(sigTestBytesHex === null){
+    sigTestResultEl.className = 'sig-testrun-result hidden';
+    sigTestResultEl.textContent = '';
+    return;
+  }
+  let hexInput = $('sigHex');
+  let hex = String((hexInput && hexInput.value) || '').trim().toUpperCase().replace(/\s+/g, '');
+  sigTestResultEl.classList.remove('hidden');
+  if(!hex || hex.length % 2 !== 0 || !/^[0-9A-F]+$/.test(hex)){
+    sigTestResultEl.className = 'sig-testrun-result';
+    sigTestResultEl.textContent = t('sig.testrunNeedHex');
+    return;
+  }
+  let actualPrefix = sigTestBytesHex.slice(0, hex.length);
+  let match = actualPrefix === hex;
+  sigTestResultEl.className = 'sig-testrun-result ' + (match ? 'ok' : 'bad');
+  sigTestResultEl.textContent = match
+    ? t('sig.testrunMatch', {hex: spacedHex(sigTestBytesHex)})
+    : t('sig.testrunMismatch', {actual: spacedHex(actualPrefix), typed: spacedHex(hex)});
+}
+function spacedHex(h){ return h.replace(/(..)/g,'$1 ').trim(); }
+
+if(sigTestFileInput){
+  sigTestFileInput.addEventListener('change', async function(){
+    let f = sigTestFileInput.files && sigTestFileInput.files[0];
+    if(!f){ sigTestBytesHex = null; renderSigTestResult(); return; }
+    sigTestBytesHex = hexOf(await readBytes(f, 0, 32));
+    renderSigTestResult();
+  });
+}
+let sigHexInput = $('sigHex');
+if(sigHexInput) sigHexInput.addEventListener('input', renderSigTestResult);
+
+const sigExportBtn = $('sigExportBtn');
 if(sigExportBtn){
   sigExportBtn.addEventListener('click', function(){
     if(!customSigs.length){ toast(t('sig.listEmpty')); return; }
     saveBlob(exportCustomSigsJson(), 'custom-signatures_' + stamp() + '.json', 'application/json;charset=utf-8');
   });
 }
-var sigImportBtn = $('sigImportBtn');
-var sigImportInput = $('sigImportInput');
+const sigImportBtn = $('sigImportBtn');
+const sigImportInput = $('sigImportInput');
+const sigImportOverwriteCk = $('sigImportOverwrite');
 if(sigImportBtn && sigImportInput){
   sigImportBtn.addEventListener('click', function(){ sigImportInput.click(); });
   sigImportInput.addEventListener('change', function(){
-    var file = sigImportInput.files && sigImportInput.files[0];
+    let file = sigImportInput.files && sigImportInput.files[0];
     sigImportInput.value = '';
     if(!file) return;
-    var reader = new FileReader();
+    let reader = new FileReader();
     reader.onload = function(){
-      var result = importCustomSigsJson(String(reader.result));
+      let overwrite = !!(sigImportOverwriteCk && sigImportOverwriteCk.checked);
+      let result = importCustomSigsJson(String(reader.result), {overwrite:overwrite});
       if(result.error){
         toast(t('sig.importError'));
         return;
       }
       broadcastCustomSigsToWorkers();
       renderSigList();
-      toast(t('sig.importResult', {added:result.added, skipped:result.skipped, invalid:result.invalid}));
+      toast(t('sig.importResult', {added:result.added, updated:result.updated, skipped:result.skipped, invalid:result.invalid}));
     };
     reader.onerror = function(){ toast(t('sig.importError')); };
     reader.readAsText(file);
@@ -1349,10 +1473,10 @@ if(sigImportBtn && sigImportInput){
    預設是 'system'（跟隨系統），沒有存過偏好時依 prefers-color-scheme
    判斷；使用者主動選了淺色或深色之後才會固定下來，不再跟著系統走。
    --------------------------------------------------------------- */
-var THEME_KEY = 'fsi-theme';
+const THEME_KEY = 'fsi-theme';
 function loadThemePref(){
   try{
-    var v = localStorage.getItem(THEME_KEY);
+    let v = localStorage.getItem(THEME_KEY);
     if(v === 'light' || v === 'dark' || v === 'system') return v;
   }catch(e){ /* 隱私模式擋 localStorage 時，安靜地退回預設值即可 */ }
   return 'system';
@@ -1360,8 +1484,8 @@ function loadThemePref(){
 function saveThemePref(v){
   try{ localStorage.setItem(THEME_KEY, v); }catch(e){}
 }
-var themePref = loadThemePref();
-var systemDarkMql = (typeof matchMedia === 'function') ? matchMedia('(prefers-color-scheme: dark)') : null;
+let themePref = loadThemePref();
+const systemDarkMql = (typeof matchMedia === 'function') ? matchMedia('(prefers-color-scheme: dark)') : null;
 
 function effectiveTheme(){
   if(themePref !== 'system') return themePref;
@@ -1382,7 +1506,7 @@ function applyTheme(){
 // 「跟隨系統」狀態下，作業系統的深色/淺色設定改變時要能即時反映，
 // 不用重新整理頁面。使用者已經手動選過淺色或深色的話，這裡不會生效。
 if(systemDarkMql){
-  var onSystemThemeChange = function(){ if(themePref === 'system') applyTheme(); };
+  let onSystemThemeChange = function(){ if(themePref === 'system') applyTheme(); };
   if(systemDarkMql.addEventListener) systemDarkMql.addEventListener('change', onSystemThemeChange);
   else if(systemDarkMql.addListener) systemDarkMql.addListener(onSystemThemeChange); // Safari 13 以下的舊寫法
 }
@@ -1390,7 +1514,7 @@ if(systemDarkMql){
 // 語言切換：zh → en → ja → zh 循環。按鈕文字顯示的是「按下去會切換成
 // 哪個語言」（跟主題按鈕邏輯一致），所以要用「下一個」語言的名稱。
 function nextLang(){
-  var i = LANGS.indexOf(currentLang);
+  let i = LANGS.indexOf(currentLang);
   return LANGS[(i + 1) % LANGS.length];
 }
 function applyLangUI(){
@@ -1434,15 +1558,15 @@ dropzone.addEventListener('click', function(){ fileInput.click(); });
    位元組，只有在 drop 之後才做得到（現有的掃描流程本來就會馬上做）。
    --------------------------------------------------------------- */
 function countDraggedItems(e){
-  var items = e.dataTransfer && e.dataTransfer.items;
+  let items = e.dataTransfer && e.dataTransfer.items;
   if(!items) return 0;
-  var n = 0;
-  for(var i = 0; i < items.length; i++){ if(items[i].kind === 'file') n++; }
+  let n = 0;
+  for(let i = 0; i < items.length; i++){ if(items[i].kind === 'file') n++; }
   return n;
 }
 function showDragCount(e){
-  var n = countDraggedItems(e);
-  var el = $('dragCount');
+  let n = countDraggedItems(e);
+  let el = $('dragCount');
   if(!el) return;
   if(n > 0){
     el.textContent = t('dropzone.dragCount', {n:n});
@@ -1453,23 +1577,23 @@ function showDragCount(e){
 }
 
 ['dragenter','dragover'].forEach(function(ev){ dropzone.addEventListener(ev, function(e){ e.preventDefault(); dropzone.classList.add('drag'); showDragCount(e); }); });
-['dragleave'].forEach(function(ev){ dropzone.addEventListener(ev, function(e){ e.preventDefault(); dropzone.classList.remove('drag'); var el=$('dragCount'); if(el) el.classList.add('hidden'); }); });
+['dragleave'].forEach(function(ev){ dropzone.addEventListener(ev, function(e){ e.preventDefault(); dropzone.classList.remove('drag'); let el=$('dragCount'); if(el) el.classList.add('hidden'); }); });
 dropzone.addEventListener('drop', async function(e){
   e.preventDefault(); dropzone.classList.remove('drag');
-  var dc = $('dragCount'); if(dc) dc.classList.add('hidden');
-  var list = await filesFromDataTransfer(e.dataTransfer);
+  let dc = $('dragCount'); if(dc) dc.classList.add('hidden');
+  let list = await filesFromDataTransfer(e.dataTransfer);
   if(list.length) handleEntries(list);
 });
 window.addEventListener('dragover', function(e){ e.preventDefault(); });
 window.addEventListener('drop', function(e){ e.preventDefault(); });
 
 fileInput.addEventListener('change', function(e){
-  var list = Array.prototype.slice.call(e.target.files).map(function(f){ return {file:f, path:f.name}; });
+  let list = Array.prototype.slice.call(e.target.files).map(function(f){ return {file:f, path:f.name}; });
   if(list.length) handleEntries(list);
   fileInput.value = '';
 });
 dirInput.addEventListener('change', function(e){
-  var list = Array.prototype.slice.call(e.target.files).map(function(f){
+  let list = Array.prototype.slice.call(e.target.files).map(function(f){
     return {file:f, path: f.webkitRelativePath || f.name};
   });
   if(list.length) handleEntries(list);
@@ -1495,26 +1619,61 @@ if(persistCk){
   });
 }
 $('clearStoredBtn').addEventListener('click', function(){
-  var n = reviewedHashes.size;
+  let n = reviewedHashes.size;
   if(!n){ toast(t('toast.storedNone')); return; }
   reviewedHashes = new Set();
   try{ localStorage.removeItem(PERSIST_KEY); }catch(e){}
   toast(t('toast.storedCleared', {n:n}));
 });
+
+const exportReviewedBtn = $('exportReviewedBtn');
+if(exportReviewedBtn){
+  exportReviewedBtn.addEventListener('click', function(){
+    if(!reviewedHashes.size){ toast(t('toast.storedNone')); return; }
+    saveBlob(exportReviewedJson(), 'reviewed-marks_' + stamp() + '.json', 'application/json;charset=utf-8');
+  });
+}
+const importReviewedBtn = $('importReviewedBtn');
+const importReviewedInput = $('importReviewedInput');
+if(importReviewedBtn && importReviewedInput){
+  importReviewedBtn.addEventListener('click', function(){
+    // 匯入等於主動把一批雜湊寫進 localStorage，跟「記住已檢查標記」
+    // 這個選項本身一樣涉及隱私，所以要求先勾選那個開關才能匯入——
+    // 不然使用者可能在沒勾選、以為什麼都不會留下紀錄的狀態下，
+    // 被匯入動作悄悄寫入了 localStorage。
+    if(!persistCk || !persistCk.checked){ toast(t('toast.reviewedImportNeedsPersist')); return; }
+    importReviewedInput.click();
+  });
+  importReviewedInput.addEventListener('change', function(){
+    let file = importReviewedInput.files && importReviewedInput.files[0];
+    importReviewedInput.value = '';
+    if(!file) return;
+    let reader = new FileReader();
+    reader.onload = function(){
+      let result = importReviewedJson(String(reader.result));
+      if(result.error){ toast(t('toast.reviewedImportError')); return; }
+      applyStoredReviewMarks();
+      render();
+      toast(t('toast.reviewedImportResult', {added:result.added, invalid:result.invalid}));
+    };
+    reader.onerror = function(){ toast(t('toast.reviewedImportError')); };
+    reader.readAsText(file);
+  });
+}
 $('undoBtn').addEventListener('click', undoRemove);
 $('copyLinkBtn').addEventListener('click', function(){
   writeHashState();
   copyText(location.href);
   toast(t('toast.linkCopied'));
 });
-var searchTimer = null;
+let searchTimer = null;
 searchBox.addEventListener('input', function(){
   clearTimeout(searchTimer);
   searchTimer = setTimeout(refilter, 140);
 });
 
 $('copyHashBtn').addEventListener('click', function(){
-  var seen = {}, list = [];
+  let seen = {}, list = [];
   visibleRows().forEach(function(r){
     if(r.sha256 && !seen[r.sha256]){ seen[r.sha256] = 1; list.push(r.sha256); }
   });
@@ -1537,7 +1696,7 @@ $('clearBtn').addEventListener('click', function(){
   writeHashState();
   // 把拖放區還原成完整大小，因為畫面上已經沒有結果要讓位了
   dropzone.classList.remove('compact');
-  var dzTitle = dropzone.querySelector('strong');
+  let dzTitle = dropzone.querySelector('strong');
   if(dzTitle) dzTitle.textContent = t('dropzone.title');
   render();
 });
@@ -1545,6 +1704,7 @@ $('hashAllBtn').addEventListener('click', hashAll);
 $('csvBtn').addEventListener('click', exportCsv);
 $('jsonBtn').addEventListener('click', exportJson);
 $('downloadBtn').addEventListener('click', exportTxt);
+$('fixAllBtn').addEventListener('click', downloadAllFixed);
 
 /* ---------------------------------------------------------------
    初始化

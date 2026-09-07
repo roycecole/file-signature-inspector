@@ -26,8 +26,8 @@
    內有個別可點項目」的樣式普遍能正確處理，是常見的務實折衷。
    ============================================================= */
 
-var FALLBACK_ICON = {image:'🖼', doc:'📄', text:'📝', exec:'⚠', other:'·'};
-var MEDIA_ICON = {video:'🎬', audio:'🎵', pdf:'📄'};
+const FALLBACK_ICON = {image:'🖼', doc:'📄', text:'📝', exec:'⚠', other:'·'};
+const MEDIA_ICON = {video:'🎬', audio:'🎵', pdf:'📄'};
 
 // 產生表格「預覽」欄的內容。
 function buildPreviewCell(r){
@@ -38,14 +38,14 @@ function buildPreviewCell(r){
     }
     // 影片／音訊／PDF：表格裡放不下播放器，先顯示一個可點擊的圖示，
     // 實際播放/檢視放到 openLightbox() 裡處理。
-    var icon = MEDIA_ICON[r.previewKind] || '▶';
+    let icon = MEDIA_ICON[r.previewKind] || '▶';
     return '<span class="thumb-placeholder media" role="button" tabindex="0" ' +
            'aria-label="'+esc(t('preview.ariaLabel',{name:r.name}))+'" data-zoom="'+r.id+'">'+icon+'</span>';
   }
   if(r.previewTooLarge){
     // previewUrl 還沒建立（檔案太大），但一樣可以點開，只是進燈箱後
     // 看到的是確認畫面而不是直接播放。用虛線邊框跟一般縮圖做視覺區分。
-    var icon2 = MEDIA_ICON[r.previewKind] || '▶';
+    let icon2 = MEDIA_ICON[r.previewKind] || '▶';
     return '<span class="thumb-placeholder media toolarge" role="button" tabindex="0" ' +
            'aria-label="'+esc(t('preview.ariaLabelToolarge',{name:r.name}))+'" data-zoom="'+r.id+'" ' +
            'title="'+esc(t('preview.toolargeTitle'))+'">'+icon2+'</span>';
@@ -56,7 +56,7 @@ function buildPreviewCell(r){
 
 // 依 previewKind 組出燈箱裡要放的媒體元素（previewUrl 已存在的情況）。
 function buildLightboxMedia(r){
-  var url = r.previewUrl;
+  let url = r.previewUrl;
   if(r.previewKind === 'image'){
     return '<img src="'+url+'" alt="'+esc(t('lightbox.previewAlt',{name:r.name}))+'">';
   }
@@ -80,8 +80,8 @@ function buildLightboxMedia(r){
 
 // 檔案超過 PREVIEW_SIZE_LIMIT 時，燈箱裡先顯示這個確認畫面。
 function buildTooLargeNotice(r){
-  var limit = PREVIEW_SIZE_LIMIT[r.previewKind];
-  var icon = MEDIA_ICON[r.previewKind] || '▶';
+  let limit = PREVIEW_SIZE_LIMIT[r.previewKind];
+  let icon = MEDIA_ICON[r.previewKind] || '▶';
   return '<div class="toolarge-panel">'+
     '<div class="toolarge-icon" aria-hidden="true">'+icon+'</div>'+
     '<p>'+t('lightbox.tooLargeText', {size: fmtSize(r.size), limit: fmtSize(limit)})+'</p>'+
@@ -115,26 +115,26 @@ function loadPreviewNow(r, mediaEl){
      背景的表格或按鈕。
    --------------------------------------------------------------- */
 function openLightbox(id){
-  var r = allResults.find(function(x){ return x.id === id; });
+  let r = allResults.find(function(x){ return x.id === id; });
   if(!r || (!r.previewUrl && !r.previewTooLarge)) return;
 
-  var previouslyFocused = document.activeElement;
+  let previouslyFocused = document.activeElement;
 
-  var box = document.createElement('div');
+  let box = document.createElement('div');
   box.className = 'lightbox';
   box.setAttribute('role', 'dialog');
   box.setAttribute('aria-modal', 'true');
   box.setAttribute('aria-label', t('lightbox.dialogLabel', {name:r.name}));
   box.setAttribute('tabindex', '-1');
 
-  var mediaHtml = r.previewUrl ? buildLightboxMedia(r) : buildTooLargeNotice(r);
+  let mediaHtml = r.previewUrl ? buildLightboxMedia(r) : buildTooLargeNotice(r);
   box.innerHTML =
     '<button class="lightbox-close" aria-label="'+esc(t('lightbox.closeLabel'))+'">✕</button>' +
     '<div class="lightbox-media">' + mediaHtml + '</div>' +
     '<div class="cap">' + esc(r.name) + '　·　' + esc(formatName(r.format)) + '　·　' + fmtSize(r.size) + '</div>';
 
-  var mediaWrap = box.querySelector('.lightbox-media');
-  var closeBtn = box.querySelector('.lightbox-close');
+  let mediaWrap = box.querySelector('.lightbox-media');
+  let closeBtn = box.querySelector('.lightbox-close');
 
   function focusableEls(){
     return Array.prototype.slice.call(
@@ -154,9 +154,9 @@ function openLightbox(id){
   function onKey(ev){
     if(ev.key === 'Escape'){ close(); return; }
     if(ev.key === 'Tab'){
-      var els = focusableEls();
+      let els = focusableEls();
       if(!els.length) return;
-      var first = els[0], last = els[els.length - 1];
+      let first = els[0], last = els[els.length - 1];
       if(ev.shiftKey && document.activeElement === first){
         ev.preventDefault(); last.focus();
       } else if(!ev.shiftKey && document.activeElement === last){
@@ -170,7 +170,7 @@ function openLightbox(id){
   box.addEventListener('click', close);
   mediaWrap.addEventListener('click', function(e){ e.stopPropagation(); });
   mediaWrap.addEventListener('click', function(e){
-    var btn = e.target.closest('[data-load-preview]');
+    let btn = e.target.closest('[data-load-preview]');
     if(btn) loadPreviewNow(r, mediaWrap);
   });
   closeBtn.addEventListener('click', close);

@@ -18,7 +18,7 @@
    type 的可能值：image / doc / text / exec / other
    ============================================================= */
 
-var SIGS = [
+const SIGS = [
   {type:"exec", name:"Windows 捷徑 (LNK)", ext:[".lnk"], magic:"4C0000000114020000000000C000000000000046"},
   {type:"other",name:"SQLite 資料庫",      ext:[".sqlite",".db",".sqlite3"], magic:"53514C69746520666F726D6174203300"},
   {type:"image",name:"PNG",                ext:[".png"], magic:"89504E470D0A1A0A"},
@@ -64,8 +64,8 @@ var SIGS = [
   {type:"image",name:"BMP",                ext:[".bmp"], magic:"424D"},
 ].sort(function(a,b){ return b.magic.length - a.magic.length; });
 
-var KIND_LABEL = {image:"圖片", doc:"文件", text:"純文字", exec:"執行檔", other:"其他"};
-var KIND_CLASS = {image:"img", doc:"doc", text:"text", exec:"exec", other:"other"};
+const KIND_LABEL = {image:"圖片", doc:"文件", text:"純文字", exec:"執行檔", other:"其他"};
+const KIND_CLASS = {image:"img", doc:"doc", text:"text", exec:"exec", other:"other"};
 
 /* -------------------------------------------------------------
    MEDIA_PREVIEW — 可以直接在畫面上預覽的格式
@@ -95,14 +95,14 @@ var KIND_CLASS = {image:"img", doc:"doc", text:"text", exec:"exec", other:"other
    的確認畫面，按下去才真的建立 Blob 並播放/顯示（見 preview.js 的
    loadPreviewNow()）。
    ------------------------------------------------------------- */
-var PREVIEW_SIZE_LIMIT = {
+const PREVIEW_SIZE_LIMIT = {
   image: 30  * 1024 * 1024,   // 30 MB —— 正常圖片很少超過這個大小
   video: 300 * 1024 * 1024,   // 300 MB
   audio: 100 * 1024 * 1024,   // 100 MB
   pdf:   80  * 1024 * 1024    // 80 MB
 };
 
-var MEDIA_PREVIEW = {
+const MEDIA_PREVIEW = {
   // 圖片
   "PNG":              {kind:"image", mime:"image/png"},
   "JPEG":             {kind:"image", mime:"image/jpeg"},
@@ -131,23 +131,23 @@ var MEDIA_PREVIEW = {
   "PDF":              {kind:"pdf", mime:"application/pdf"}
 };
 
-var EXEC_EXT = new Set([".exe",".dll",".scr",".sys",".ocx",".cpl",".com",".pif",".msi",".msp",".cab",
+const EXEC_EXT = new Set([".exe",".dll",".scr",".sys",".ocx",".cpl",".com",".pif",".msi",".msp",".cab",
   ".bat",".cmd",".ps1",".psm1",".vbs",".vbe",".js",".jse",".wsf",".wsh",".hta",".reg",
   ".jar",".apk",".dex",".class",".sh",".bash",".py",".pl",".rb",".lnk",".swf",
   ".elf",".so",".dylib",".bundle",".app",".deb",".rpm",".run",".bin"]);
 
-var SCRIPT_EXT = new Set([".ps1",".psm1",".bat",".cmd",".vbs",".vbe",".js",".jse",".wsf",".hta",".sh",".bash",".py",".pl",".rb",".reg"]);
+const SCRIPT_EXT = new Set([".ps1",".psm1",".bat",".cmd",".vbs",".vbe",".js",".jse",".wsf",".hta",".sh",".bash",".py",".pl",".rb",".reg"]);
 
-var BENIGN_EXT = new Set(["pdf","doc","docx","xls","xlsx","ppt","pptx","txt","csv","rtf","odt","ods","odp",
+const BENIGN_EXT = new Set(["pdf","doc","docx","xls","xlsx","ppt","pptx","txt","csv","rtf","odt","ods","odp",
   "jpg","jpeg","png","gif","bmp","tif","tiff","webp","heic","svg","ico",
   "mp3","mp4","mov","avi","wav","zip","rar","7z","html","htm","json","xml","log"]);
 
-var TEXT_EXT = new Set([".txt",".csv",".tsv",".log",".md",".markdown",".json",".xml",".yml",".yaml",
+const TEXT_EXT = new Set([".txt",".csv",".tsv",".log",".md",".markdown",".json",".xml",".yml",".yaml",
   ".ini",".cfg",".conf",".properties",".html",".htm",".css",".js",".ts",".jsx",".sql",".srt",".vtt",
   ".ps1",".psm1",".bat",".cmd",".sh",".bash",".py",".pl",".rb",".php",".java",".c",".h",".cpp",".cs",
   ".go",".rs",".r",".m",".reg",".env",".gitignore",".svg"]);
 
-var ZIP_FAMILY = {
+const ZIP_FAMILY = {
   ".docx":"Word (OOXML)", ".docm":"Word (OOXML, 巨集)", ".xlsx":"Excel (OOXML)", ".xlsm":"Excel (OOXML, 巨集)",
   ".pptx":"PowerPoint (OOXML)", ".ppsx":"PowerPoint (OOXML)", ".pptm":"PowerPoint (OOXML, 巨集)",
   ".odt":"OpenDocument 文字", ".ods":"OpenDocument 試算表", ".odp":"OpenDocument 簡報",
@@ -160,7 +160,7 @@ var ZIP_FAMILY = {
 // （Word (OOXML)）」），而是存 family 原始值，讓 i18n.js 在顯示當下
 // 才用 t('fmt.zipContainerOf', {family:...}) 組字串——這樣才能依照
 // 使用者選的語言組出對的句子，而不是把中文句型寫死在資料裡。
-var EXT_SIG_MAP = {};
+const EXT_SIG_MAP = {};
 SIGS.forEach(function(s){ s.ext.forEach(function(e){ if(!EXT_SIG_MAP[e]) EXT_SIG_MAP[e] = {magic:s.magic, name:s.name}; }); });
 Object.keys(ZIP_FAMILY).forEach(function(e){
   if(!EXT_SIG_MAP[e]) EXT_SIG_MAP[e] = {magic:"504B0304", family:ZIP_FAMILY[e], isZip:true};
@@ -179,8 +179,8 @@ Object.keys(ZIP_FAMILY).forEach(function(e){
    這樣 detectors.js 的 resolveSignature() 不需要為了自訂簽章
    另外寫一套判斷邏輯，直接混進同一份排序好的清單裡比對就好。
    ------------------------------------------------------------- */
-var CUSTOM_SIG_KEY = 'fsi-custom-sigs';
-var CUSTOM_SIG_TYPES = ['image','doc','text','exec','other'];
+const CUSTOM_SIG_KEY = 'fsi-custom-sigs';
+const CUSTOM_SIG_TYPES = ['image','doc','text','exec','other'];
 
 function isValidCustomSigShape(s){
   return !!(s && typeof s.name === 'string' && s.name &&
@@ -190,9 +190,9 @@ function isValidCustomSigShape(s){
 }
 function loadCustomSigs(){
   try{
-    var raw = localStorage.getItem(CUSTOM_SIG_KEY);
+    let raw = localStorage.getItem(CUSTOM_SIG_KEY);
     if(!raw) return [];
-    var arr = JSON.parse(raw);
+    let arr = JSON.parse(raw);
     return Array.isArray(arr) ? arr.filter(isValidCustomSigShape) : [];
   }catch(e){ return []; }
 }
@@ -200,7 +200,7 @@ function saveCustomSigs(){
   try{ localStorage.setItem(CUSTOM_SIG_KEY, JSON.stringify(customSigs)); }
   catch(e){ /* 隱私模式或容量已滿：這次記不住，但不影響本次瀏覽階段的使用 */ }
 }
-var customSigs = loadCustomSigs();
+let customSigs = loadCustomSigs();
 
 // 驗證使用者在表單裡填的內容，回傳 {ok:true, sig:{...}} 或
 // {ok:false, errorKey:'sig.errXxx'}（errorKey 對應 i18n.js 的翻譯鍵）。
@@ -210,7 +210,7 @@ function validateCustomSig(name, extRaw, hexRaw, type){
   name = (name || '').trim();
   if(!name) return {ok:false, errorKey:'sig.errName'};
 
-  var exts = String(extRaw || '').split(/[\s,，、]+/).map(function(e){
+  let exts = String(extRaw || '').split(/[\s,，、]+/).map(function(e){
     e = e.trim().toLowerCase();
     if(!e) return null;
     if(e.charAt(0) !== '.') e = '.' + e;
@@ -218,10 +218,16 @@ function validateCustomSig(name, extRaw, hexRaw, type){
   }).filter(function(e){ return !!e; });
   if(!exts.length) return {ok:false, errorKey:'sig.errExt'};
 
-  var hex = String(hexRaw || '').trim().toUpperCase().replace(/\s+/g, '');
+  let hex = String(hexRaw || '').trim().toUpperCase().replace(/\s+/g, '');
   if(!hex || hex.length % 2 !== 0 || !/^[0-9A-F]+$/.test(hex)) return {ok:false, errorKey:'sig.errHex'};
 
   if(customSigs.some(function(s){ return s.name === name; })) return {ok:false, errorKey:'sig.errDup'};
+  // 名稱不能跟內建格式撞名：detectors.js 判定出內建格式時，畫面顯示走
+  // formatName() → FORMAT_NAME_I18N 這張表查譯名；如果自訂簽章剛好取了
+  // 一模一樣的名字，英文/日文介面就會把使用者自己輸入的名稱誤換成
+  // 內建格式的譯名（因為查表是純字串比對，不知道這筆是自訂的）。
+  // 在輸入當下就擋掉，比事後才處理顯示層的特例簡單、不會漏。
+  if(SIGS.some(function(s){ return s.name === name; })) return {ok:false, errorKey:'sig.errBuiltin'};
   if(CUSTOM_SIG_TYPES.indexOf(type) < 0) type = 'other';
 
   return {ok:true, sig:{name:name, ext:exts, magic:hex, type:type, custom:true}};
@@ -234,7 +240,7 @@ function addCustomSig(sig){
   saveCustomSigs();
 }
 function removeCustomSig(name){
-  var sig = customSigs.find(function(s){ return s.name === name; });
+  let sig = customSigs.find(function(s){ return s.name === name; });
   customSigs = customSigs.filter(function(s){ return s.name !== name; });
   if(sig){
     sig.ext.forEach(function(e){ if(EXT_SIG_MAP[e] && EXT_SIG_MAP[e].name === sig.name) delete EXT_SIG_MAP[e]; });
@@ -250,25 +256,38 @@ function exportCustomSigsJson(){
 
 // 匯入：接受兩種格式，一種是 exportCustomSigsJson() 產生的
 // {tool, version, sigs:[...]}，另一種是單純的簽章陣列（方便手寫或
-// 用其他工具產生）。同名的簽章一律跳過、不覆蓋既有設定，避免不小心
-// 匯入一份舊檔案就把剛調整好的定義蓋掉。回傳的統計數字給 UI 顯示
-// 「新增了幾筆、跳過了幾筆、幾筆格式不對被忽略」。
-function importCustomSigsJson(jsonText){
-  var data;
+// 用其他工具產生）。
+//
+// opts.overwrite 控制「匯入檔裡的名稱跟現有自訂簽章同名」時怎麼處理：
+// - false（預設）：跳過、不覆蓋既有設定，避免不小心匯入一份舊檔案就把
+//   剛調整好的定義蓋掉。
+// - true：視為「用這筆更新既有定義」，取代掉同名那一筆的副檔名／HEX／
+//   類型。這是給「我就是想拿匯入檔的版本蓋掉舊版本」這種情境用的，
+//   不用像以前一樣得先手動刪除同名簽章再重新匯入。
+// 匯入檔裡的名稱如果跟「內建」格式撞名，一律當無效項目略過（跟
+// validateCustomSig() 的規則一致，避免顯示層把使用者的自訂名稱誤換
+// 成內建格式的譯名）。
+// 回傳的統計數字給 UI 顯示「新增了幾筆、更新了幾筆、跳過了幾筆、
+// 幾筆格式不對被忽略」。
+function importCustomSigsJson(jsonText, opts){
+  let overwrite = !!(opts && opts.overwrite);
+  let data;
   try{ data = JSON.parse(jsonText); }
-  catch(e){ return {added:0, skipped:0, invalid:0, error:'parse'}; }
+  catch(e){ return {added:0, updated:0, skipped:0, invalid:0, error:'parse'}; }
 
-  var list = Array.isArray(data) ? data : (data && Array.isArray(data.sigs) ? data.sigs : null);
-  if(!list) return {added:0, skipped:0, invalid:0, error:'shape'};
+  let list = Array.isArray(data) ? data : (data && Array.isArray(data.sigs) ? data.sigs : null);
+  if(!list) return {added:0, updated:0, skipped:0, invalid:0, error:'shape'};
 
-  var added = 0, skipped = 0, invalid = 0;
+  let added = 0, updated = 0, skipped = 0, invalid = 0;
   list.forEach(function(s){
-    if(!isValidCustomSigShape(s)){ invalid++; return; }
-    if(customSigs.some(function(x){ return x.name === s.name; })){ skipped++; return; }
+    if(!isValidCustomSigShape(s) || SIGS.some(function(b){ return b.name === s.name; })){ invalid++; return; }
+    let exists = customSigs.some(function(x){ return x.name === s.name; });
+    if(exists && !overwrite){ skipped++; return; }
+    if(exists) removeCustomSig(s.name);
     addCustomSig({ name:s.name, ext:s.ext.slice(), magic:s.magic, type:s.type, custom:true });
-    added++;
+    if(exists) updated++; else added++;
   });
-  return {added:added, skipped:skipped, invalid:invalid};
+  return {added:added, updated:updated, skipped:skipped, invalid:invalid};
 }
 
 // detectors.js 的 resolveSignature() 用這個取代直接掃 SIGS——自訂簽章

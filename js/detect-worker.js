@@ -32,7 +32,7 @@
 importScripts('utils.js', 'i18n.js', 'signatures.js', 'detectors.js');
 
 self.onmessage = async function(e){
-  var msg = e.data;
+  const msg = e.data;
   if(!msg) return;
 
   if(msg.type === 'sync-custom-sigs'){
@@ -43,7 +43,7 @@ self.onmessage = async function(e){
   if(msg.type === 'analyze'){
     setLangSilent(msg.lang);
     try{
-      var result = await analyzeFileCore(msg.file, msg.relPath);
+      const result = await analyzeFileCore(msg.file, msg.relPath);
       self.postMessage({ type:'result', reqId: msg.reqId, result: result });
     }catch(err){
       self.postMessage({ type:'error', reqId: msg.reqId, error: (err && err.message) ? err.message : String(err) });

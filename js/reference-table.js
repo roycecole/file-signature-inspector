@@ -23,7 +23,7 @@
         頁面需要有 id="refBody" 的 <tbody>。
    ============================================================= */
 
-var REF = [
+const REF = [
   ['group', 'ref.group.imageDoc'],
   ['image', 'ref.name.png', '.png', '89 50 4E 47 0D 0A 1A 0A', ''],
   ['image', 'ref.name.jpeg', '.jpg .jpeg', 'FF D8 FF', ''],
@@ -80,12 +80,12 @@ var REF = [
 ];
 
 function buildRef(){
-  var body = document.getElementById('refBody');
+  const body = document.getElementById('refBody');
   if(!body) return;
   body.innerHTML = REF.map(function(row){
     if(row[0] === 'group') return '<tr class="grouphead"><td colspan="4">'+t(row[1])+'</td></tr>';
-    var kind = row[0], name = t(row[1]), ext = row[2], hex = row[3], noteKey = row[4];
-    var hexDisplay = (hex === 'ref.hex.none' || hex === 'ref.hex.tar') ? t(hex) : hex;
+    const kind = row[0], name = t(row[1]), ext = row[2], hex = row[3], noteKey = row[4];
+    const hexDisplay = (hex === 'ref.hex.none' || hex === 'ref.hex.tar') ? t(hex) : hex;
     return '<tr><td><span class="kind-pill '+(KIND_CLASS[kind]||'other')+'">'+kindLabel(kind)+'</span></td>'+
            '<td>'+name+'</td><td class="ext">'+ext+'</td>'+
            '<td class="hexref">'+hexDisplay+(noteKey ? '<div class="hexnote">'+t(noteKey)+'</div>' : '')+'</td></tr>';

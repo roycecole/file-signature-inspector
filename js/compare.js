@@ -21,15 +21,15 @@
    才值得抽成 openModal() 共用。
    ============================================================= */
 
-var compareSlots = [];   // 最多 2 個 result id
-var COMPARE_CAP_OPTIONS = [256, 1024, 4096, 65536];
-var COMPARE_CAP_DEFAULT = 256;
-var compareCap = COMPARE_CAP_DEFAULT; // 目前選擇的比對範圍，開啟比較視窗時可以換
+let compareSlots = [];   // 最多 2 個 result id
+const COMPARE_CAP_OPTIONS = [256, 1024, 4096, 65536];
+const COMPARE_CAP_DEFAULT = 256;
+let compareCap = COMPARE_CAP_DEFAULT; // 目前選擇的比對範圍，開啟比較視窗時可以換
 
 function isInCompare(id){ return compareSlots.indexOf(id) >= 0; }
 
 function toggleCompareSlot(id){
-  var idx = compareSlots.indexOf(id);
+  let idx = compareSlots.indexOf(id);
   if(idx >= 0){
     compareSlots.splice(idx, 1);
   } else {
@@ -47,7 +47,7 @@ function clearCompareSlots(){
 }
 
 function renderCompareBar(){
-  var bar = document.getElementById('compareBar');
+  let bar = document.getElementById('compareBar');
   if(!bar) return;
   if(!compareSlots.length){
     bar.classList.add('hidden');
@@ -55,30 +55,30 @@ function renderCompareBar(){
     return;
   }
   bar.classList.remove('hidden');
-  var names = compareSlots.map(function(id){
-    var r = allResults.find(function(x){ return x.id === id; });
+  let names = compareSlots.map(function(id){
+    let r = allResults.find(function(x){ return x.id === id; });
     return r ? esc(r.name) : '?';
   });
-  var ready = compareSlots.length === 2;
+  let ready = compareSlots.length === 2;
   bar.innerHTML =
     '<span class="compare-label">'+t('compare.selected',{n:compareSlots.length})+'：'+names.join('　vs　')+'</span>'+
     '<button type="button" class="minibtn primary" id="compareGoBtn" '+(ready?'':'disabled')+'>'+t('compare.button')+'</button>'+
     '<button type="button" class="icon-btn rm" id="compareClearBtn" title="'+esc(t('compare.clear'))+'">✕</button>';
-  var goBtn = document.getElementById('compareGoBtn');
+  let goBtn = document.getElementById('compareGoBtn');
   if(goBtn) goBtn.addEventListener('click', openCompareView);
-  var clearBtn = document.getElementById('compareClearBtn');
+  let clearBtn = document.getElementById('compareClearBtn');
   if(clearBtn) clearBtn.addEventListener('click', clearCompareSlots);
 }
 
 // 逐位元組比對兩段 Uint8Array，回傳格線需要的資料，
 // 順便算出「第一個差異在哪」「總共差幾個位元組」給文字摘要用。
 function buildByteDiff(bytesA, bytesB, cap){
-  var n = Math.min(cap, Math.max(bytesA.length, bytesB.length));
-  var cells = [], firstDiff = -1, diffCount = 0;
-  for(var i = 0; i < n; i++){
-    var a = i < bytesA.length ? bytesA[i] : null;
-    var b = i < bytesB.length ? bytesB[i] : null;
-    var same = (a !== null && b !== null && a === b);
+  let n = Math.min(cap, Math.max(bytesA.length, bytesB.length));
+  let cells = [], firstDiff = -1, diffCount = 0;
+  for(let i = 0; i < n; i++){
+    let a = i < bytesA.length ? bytesA[i] : null;
+    let b = i < bytesB.length ? bytesB[i] : null;
+    let same = (a !== null && b !== null && a === b);
     if(!same){ diffCount++; if(firstDiff < 0) firstDiff = i; }
     cells.push({a:a, b:b, same:same});
   }
@@ -87,28 +87,28 @@ function buildByteDiff(bytesA, bytesB, cap){
 
 function byteCellsHtml(cells, pick){
   return cells.map(function(c){
-    var v = pick === 'a' ? c.a : c.b;
+    let v = pick === 'a' ? c.a : c.b;
     if(v === null) return '<span class="bytecell empty">–</span>';
-    var hex = v.toString(16).toUpperCase().padStart(2,'0');
+    let hex = v.toString(16).toUpperCase().padStart(2,'0');
     return '<span class="bytecell '+(c.same ? 'match' : 'mismatch')+'">'+hex+'</span>';
   }).join('');
 }
 
 async function openCompareView(){
   if(compareSlots.length !== 2) return;
-  var ra = allResults.find(function(x){ return x.id === compareSlots[0]; });
-  var rb = allResults.find(function(x){ return x.id === compareSlots[1]; });
+  let ra = allResults.find(function(x){ return x.id === compareSlots[0]; });
+  let rb = allResults.find(function(x){ return x.id === compareSlots[1]; });
   if(!ra || !rb) return;
 
-  var previouslyFocused = document.activeElement;
-  var box = document.createElement('div');
+  let previouslyFocused = document.activeElement;
+  let box = document.createElement('div');
   box.className = 'lightbox';
   box.setAttribute('role', 'dialog');
   box.setAttribute('aria-modal', 'true');
   box.setAttribute('aria-label', t('compare.title', {a:ra.name, b:rb.name}));
   box.setAttribute('tabindex', '-1');
 
-  var capOptionsHtml = COMPARE_CAP_OPTIONS.map(function(n){
+  let capOptionsHtml = COMPARE_CAP_OPTIONS.map(function(n){
     return '<option value="'+n+'"'+(n===compareCap?' selected':'')+'>'+esc(fmtSize(n))+'</option>';
   }).join('');
 
@@ -122,16 +122,16 @@ async function openCompareView(){
       '<div id="compareContent"></div>'+
     '</div></div>';
 
-  var mediaWrap = box.querySelector('.lightbox-media');
-  var closeBtn = box.querySelector('.lightbox-close');
-  var contentEl = box.querySelector('#compareContent');
-  var capSelect = box.querySelector('#compareCapSelect');
+  let mediaWrap = box.querySelector('.lightbox-media');
+  let closeBtn = box.querySelector('.lightbox-close');
+  let contentEl = box.querySelector('#compareContent');
+  let capSelect = box.querySelector('#compareCapSelect');
 
   // 比對內容（統計文字 + 位元組格線）獨立成一段可重畫的區塊，
   // 這樣切換比對範圍時只換這一塊，不用整個對話框關掉重開、
   // 也不會把使用者的焦點位置弄丟。
   async function renderCompareContent(cap){
-    var bytesA, bytesB;
+    let bytesA, bytesB;
     try{
       bytesA = await readBytes(ra.file, 0, cap);
       bytesB = await readBytes(rb.file, 0, cap);
@@ -140,20 +140,20 @@ async function openCompareView(){
       return;
     }
 
-    var diff = buildByteDiff(bytesA, bytesB, cap);
+    let diff = buildByteDiff(bytesA, bytesB, cap);
 
-    var sizeLine = (ra.size === rb.size)
+    let sizeLine = (ra.size === rb.size)
       ? t('compare.sameSize')
       : t('compare.diffSize', {diff: fmtSize(Math.abs(ra.size - rb.size))});
 
-    var hashLine;
+    let hashLine;
     if(ra.sha256 && rb.sha256){
       hashLine = (ra.sha256 === rb.sha256) ? t('compare.sameHash') : t('compare.diffHash');
     } else {
       hashLine = t('compare.hashNeedCompute');
     }
 
-    var byteLine = diff.diffCount === 0
+    let byteLine = diff.diffCount === 0
       ? t('compare.byteAllSame', {n:diff.compared})
       : t('compare.byteDiffCount', {n:diff.compared, diff:diff.diffCount, first:diff.firstDiff + 1});
 
@@ -191,9 +191,9 @@ async function openCompareView(){
   function onKey(ev){
     if(ev.key === 'Escape'){ close(); return; }
     if(ev.key === 'Tab'){
-      var els = focusableEls();
+      let els = focusableEls();
       if(!els.length) return;
-      var first = els[0], last = els[els.length - 1];
+      let first = els[0], last = els[els.length - 1];
       if(ev.shiftKey && document.activeElement === first){ ev.preventDefault(); last.focus(); }
       else if(!ev.shiftKey && document.activeElement === last){ ev.preventDefault(); first.focus(); }
     }

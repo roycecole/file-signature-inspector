@@ -11,7 +11,7 @@
    64/65 bytes）與不對齊分塊輸入做過回歸測試，結果與標準函式庫一致。
    ============================================================= */
 
-var SHA_K = [
+const SHA_K = [
 0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
 0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
 0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
@@ -29,7 +29,7 @@ function Sha256(){
   this.total = 0;
 }
 Sha256.prototype._block = function(d, p){
-  var W = this.W, H = this.H, i, s0, s1, g0, g1;
+  let W = this.W, H = this.H, i, s0, s1, g0, g1;
   for(i=0;i<16;i++) W[i] = (d[p+i*4]<<24)|(d[p+i*4+1]<<16)|(d[p+i*4+2]<<8)|d[p+i*4+3];
   for(i=16;i<64;i++){
     g0 = W[i-15]; g1 = W[i-2];
@@ -37,7 +37,7 @@ Sha256.prototype._block = function(d, p){
     s1 = ((g1>>>17)|(g1<<15)) ^ ((g1>>>19)|(g1<<13)) ^ (g1>>>10);
     W[i] = (W[i-16] + s0 + W[i-7] + s1) | 0;
   }
-  var a=H[0],b=H[1],c=H[2],dd=H[3],e=H[4],f=H[5],g=H[6],h=H[7],S0,S1,ch,maj,t1,t2;
+  let a=H[0],b=H[1],c=H[2],dd=H[3],e=H[4],f=H[5],g=H[6],h=H[7],S0,S1,ch,maj,t1,t2;
   for(i=0;i<64;i++){
     S1 = ((e>>>6)|(e<<26)) ^ ((e>>>11)|(e<<21)) ^ ((e>>>25)|(e<<7));
     ch = (e & f) ^ (~e & g);
@@ -51,7 +51,7 @@ Sha256.prototype._block = function(d, p){
   H[4]=(H[4]+e)|0; H[5]=(H[5]+f)|0; H[6]=(H[6]+g)|0; H[7]=(H[7]+h)|0;
 };
 Sha256.prototype.update = function(bytes){
-  var i = 0, n = bytes.length;
+  let i = 0, n = bytes.length;
   this.total += n;
   if(this.bufLen){
     while(i < n && this.bufLen < 64) this.buf[this.bufLen++] = bytes[i++];
@@ -61,38 +61,38 @@ Sha256.prototype.update = function(bytes){
   while(i < n) this.buf[this.bufLen++] = bytes[i++];
 };
 Sha256.prototype.hex = function(){
-  var bitLenHi = Math.floor(this.total / 0x20000000);
-  var bitLenLo = (this.total << 3) >>> 0;
-  var pad = new Uint8Array(this.bufLen < 56 ? 64 : 128);
+  let bitLenHi = Math.floor(this.total / 0x20000000);
+  let bitLenLo = (this.total << 3) >>> 0;
+  let pad = new Uint8Array(this.bufLen < 56 ? 64 : 128);
   pad.set(this.buf.subarray(0, this.bufLen));
   pad[this.bufLen] = 0x80;
-  var L = pad.length;
+  let L = pad.length;
   pad[L-8] = (bitLenHi >>> 24) & 0xff; pad[L-7] = (bitLenHi >>> 16) & 0xff;
   pad[L-6] = (bitLenHi >>> 8) & 0xff;  pad[L-5] = bitLenHi & 0xff;
   pad[L-4] = (bitLenLo >>> 24) & 0xff; pad[L-3] = (bitLenLo >>> 16) & 0xff;
   pad[L-2] = (bitLenLo >>> 8) & 0xff;  pad[L-1] = bitLenLo & 0xff;
-  for(var p = 0; p < L; p += 64) this._block(pad, p);
-  var out = '';
-  for(var i=0;i<8;i++) out += (this.H[i] >>> 0).toString(16).padStart(8,'0');
+  for(let p = 0; p < L; p += 64) this._block(pad, p);
+  let out = '';
+  for(let i=0;i<8;i++) out += (this.H[i] >>> 0).toString(16).padStart(8,'0');
   return out;
 };
 
-var HASH_CHUNK = 4 * 1024 * 1024;
+const HASH_CHUNK = 4 * 1024 * 1024;
 async function sha256File(file, onProgress){
-  var canSubtle = (typeof crypto !== 'undefined') && crypto.subtle && typeof crypto.subtle.digest === 'function';
+  let canSubtle = (typeof crypto !== 'undefined') && crypto.subtle && typeof crypto.subtle.digest === 'function';
   if(canSubtle && file.size <= 96 * 1024 * 1024){
     try{
-      var buf = await file.arrayBuffer();
-      var d = await crypto.subtle.digest('SHA-256', buf);
-      var arr = new Uint8Array(d), s = '';
-      for(var i=0;i<arr.length;i++) s += arr[i].toString(16).padStart(2,'0');
+      let buf = await file.arrayBuffer();
+      let d = await crypto.subtle.digest('SHA-256', buf);
+      let arr = new Uint8Array(d), s = '';
+      for(let i=0;i<arr.length;i++) s += arr[i].toString(16).padStart(2,'0');
       return s;
     }catch(e){ /* 落到純 JS */ }
   }
-  var h = new Sha256(), off = 0;
+  let h = new Sha256(), off = 0;
   while(off < file.size){
-    var end = Math.min(off + HASH_CHUNK, file.size);
-    var chunk = new Uint8Array(await file.slice(off, end).arrayBuffer());
+    let end = Math.min(off + HASH_CHUNK, file.size);
+    let chunk = new Uint8Array(await file.slice(off, end).arrayBuffer());
     h.update(chunk);
     off = end;
     if(onProgress) onProgress(off / file.size);

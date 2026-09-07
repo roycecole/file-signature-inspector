@@ -19,9 +19,9 @@
    卡在舊版本一直看不到更新。
    ============================================================= */
 
-var CACHE_NAME = 'fsi-cache-v1';
+const CACHE_NAME = 'fsi-cache-v1';
 
-var CORE_ASSETS = [
+const CORE_ASSETS = [
   './',
   './index.html',
   './test.html',

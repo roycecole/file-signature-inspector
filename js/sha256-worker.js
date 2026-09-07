@@ -24,11 +24,11 @@
 importScripts('sha256.js');
 
 self.onmessage = async function(e){
-  var id = e.data && e.data.id;
-  var file = e.data && e.data.file;
+  const id = e.data && e.data.id;
+  const file = e.data && e.data.file;
   try{
     if(!file) throw new Error('no file payload');
-    var hash = await sha256File(file);
+    const hash = await sha256File(file);
     self.postMessage({ id: id, hash: hash });
   }catch(err){
     self.postMessage({ id: id, error: (err && err.message) ? err.message : String(err) });

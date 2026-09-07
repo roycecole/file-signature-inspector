@@ -4,9 +4,51 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>檔案簽章鑑識台（離線版）</title>
+<meta name="description" content="純前端、完全離線的檔案簽章檢測工具：讀取檔案開頭位元組，比對「實際格式」與「副檔名」是否相符，標示偽裝成文件或圖片的執行檔。支援 SHA-256 雜湊計算、批次掃描與繁體中文／简体中文／English／日本語介面。不需安裝、不需伺服器、不上傳任何檔案。">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://ext.shyetech.com/">
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#1863c9">
+
+<!--
+  SEO：這個工具的所有「內容」（比對結果、參考表）都是使用者拖檔案
+  進來之後才由 JavaScript 動態產生的，搜尋引擎沒有東西可以預先索引；
+  這裡能做、也值得做的只有這幾件事：
+  - description／canonical／OG：讓連結分享與搜尋結果列表顯示正確的
+    標題與說明文字
+  - 根目錄的 robots.txt／sitemap.xml：允許所有爬蟲、指向這個唯一的
+    網址（單頁工具，沒有其他頁面需要收錄）
+  - 刻意不用 JSON-LD 結構化資料：JSON-LD 需要一段行內 <script
+    type="application/ld+json">，但下面的 CSP 明講 script-src 'self'
+    （沒有 'unsafe-inline'），本專案「沒有任何行內 script」是刻意
+    維持的安全性質，不為了 SEO 開這個例外；純 <meta>／<link> 不受
+    script-src 影響，所以還是能做到 description／OG／canonical 這些。
+  - og:image 刻意沒有放：這個專案沒有引用任何外部資源、也沒有圖檔
+    轉檔工具（見下面 CSP 的 connect-src 'none' 與整體「不依賴外部
+    工具」的原則），手上只有 assets/favicon.svg 這個向量圖示，而
+    Facebook／LinkedIn／Twitter 的社群分享預覽普遍不接受 SVG 當
+    og:image（需要固定尺寸的 PNG/JPG，通常 1200×630）。與其放一張
+    在多數平台根本不會顯示的圖，不如先不放；要補的話需要另外設計
+    一張點陣圖，不在這次修改範圍內。
+  - 沒有加 hreflang alternate：hreflang 的設計前提是「不同語言各自
+    有獨立網址」，這個工具的語言切換是純前端狀態（存在 localStorage，
+    不改變網址），三／四種語言共用同一個網址，加了反而是誤導搜尋
+    引擎說有其實不存在的獨立網址版本，所以刻意不加，改用
+    og:locale／og:locale:alternate 表達「這個網址支援多語言」。
+-->
+<meta property="og:type" content="website">
+<meta property="og:title" content="檔案簽章鑑識台（離線版）">
+<meta property="og:description" content="純前端、完全離線的檔案簽章檢測工具：讀取檔案開頭位元組，比對「實際格式」與「副檔名」是否相符，標示偽裝成文件或圖片的執行檔。不上傳任何檔案。">
+<meta property="og:url" content="https://ext.shyetech.com/">
+<meta property="og:locale" content="zh_TW">
+<meta property="og:locale:alternate" content="zh_CN">
+<meta property="og:locale:alternate" content="en_US">
+<meta property="og:locale:alternate" content="ja_JP">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="檔案簽章鑑識台（離線版）">
+<meta name="twitter:description" content="純前端、完全離線的檔案簽章檢測工具，比對檔案實際格式與副檔名是否相符。">
+
 <!--
   PWA 安裝與離線快取（manifest.json + service-worker.js）只有在
   http(s) 情境下才會生效，file:// 開啟時瀏覽器會直接忽略，工具本身
@@ -78,11 +120,16 @@
       這也是唯一一處刻意重複三語言文案的地方。
     -->
     <div class="noscript-warning" role="alert">
-      <h2><span aria-hidden="true">⚠</span> 需要啟用 JavaScript / JavaScript required / JavaScript が必要です</h2>
+      <h2><span aria-hidden="true">⚠</span> 需要啟用 JavaScript / 需要启用 JavaScript / JavaScript required / JavaScript が必要です</h2>
       <div class="lang-block" lang="zh-Hant">
         <span class="lang-tag">繁體中文</span>
         <p>這個工具完全在你的瀏覽器裡執行——讀取檔案位元組、比對簽章、計算 SHA-256 全都需要 JavaScript，沒有它就無法運作。</p>
         <p>請在瀏覽器設定中為本頁啟用 JavaScript 後重新整理。<b>本工具不會上傳你的任何檔案，也不會蒐集任何資料</b>，所有運算都在這台裝置上完成。</p>
+      </div>
+      <div class="lang-block" lang="zh-Hans">
+        <span class="lang-tag">简体中文</span>
+        <p>这个工具完全在你的浏览器里运行——读取文件字节、比对签名、计算 SHA-256 全都需要 JavaScript，没有它就无法运行。</p>
+        <p>请在浏览器设置中为本页启用 JavaScript 后重新加载。<b>本工具不会上传你的任何文件，也不会收集任何数据</b>，所有运算都在这台设备上完成。</p>
       </div>
       <div class="lang-block" lang="en">
         <span class="lang-tag">English</span>
@@ -149,6 +196,10 @@
       <button id="csvBtn" data-i18n="btn.csv"></button>
       <button id="jsonBtn" data-i18n="btn.json"></button>
       <button id="downloadBtn" data-i18n="btn.download"></button>
+      <button id="fixAllBtn" data-i18n="btn.fixAll" data-i18n-title="btn.fixAllTitle"></button>
+      <button id="exportReviewedBtn" data-i18n="btn.exportReviewed"></button>
+      <button id="importReviewedBtn" data-i18n="btn.importReviewed"></button>
+      <input type="file" id="importReviewedInput" accept="application/json,.json" hidden>
       <button id="clearStoredBtn" data-i18n="btn.clearStored"></button>
       <button id="clearBtn" data-i18n="btn.clear"></button>
     </div>
@@ -246,11 +297,19 @@
         </label>
         <button type="submit" data-i18n="sig.formAdd"></button>
       </form>
+      <div class="sig-testrun">
+        <label class="sig-testrun-label">
+          <span data-i18n="sig.testrunLabel"></span>
+          <input type="file" id="sigTestFile">
+        </label>
+        <p id="sigTestResult" class="sig-testrun-result hidden"></p>
+      </div>
       <div id="sigList"></div>
       <div class="sig-io-row">
         <button type="button" id="sigExportBtn" data-i18n="sig.export"></button>
         <button type="button" id="sigImportBtn" data-i18n="sig.import"></button>
         <input type="file" id="sigImportInput" accept="application/json,.json" hidden>
+        <label class="filter-label"><input type="checkbox" id="sigImportOverwrite"><span data-i18n="sig.importOverwrite"></span></label>
       </div>
     </div>
   </details>
